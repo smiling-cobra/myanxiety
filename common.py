@@ -5,7 +5,7 @@ from telegram import (
     InlineKeyboardMarkup
 )
 
-TOURIST_ATTRACTIONS = '🗽 Sites'
+PLACES = '🗽 Places'
 WEATHER_FORECAST = '☀️ Weather'
 AFFORDABLE_EATS = '🥗 Eats'
 EVENTS = '⭐ Events'
@@ -17,7 +17,7 @@ BACK = '🔙 Back'
 
 def get_lobby_keyboard():
     options = [
-        [TOURIST_ATTRACTIONS, WEATHER_FORECAST, AFFORDABLE_EATS],
+        [PLACES, WEATHER_FORECAST, AFFORDABLE_EATS],
         [EVENTS, TRAVEL_TIPS, STORIES],
         [HELP]
     ]

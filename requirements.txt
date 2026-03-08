@@ -1,5 +1,7 @@
 python-telegram-bot==13.0
 requests
-openai==0.28
+anthropic
 flake8
 black
+pymongo[srv]
+python-dotenv

@@ -18,10 +18,11 @@ landmarks_texts = {
 }
 
 
-class Landmarks(Command):
-    def __init__(self, get_city_name, get_option_keyboard):
+class Places(Command):
+    def __init__(self, get_city_name, get_option_keyboard, logger):
         self.get_city_name = get_city_name
         self.get_landmark_keyboard = get_option_keyboard
+        self.logger = logger
 
     def execute(self, update: Update, context: CallbackContext) -> None:
         city_name = self.get_city_name(context)
@@ -54,6 +55,9 @@ class Landmarks(Command):
             'key': google_map_api_key
         }
 
+        # self.logger.log('info', f'Google Places API URL: {google_places_api_url}')
+        # self.logger.log('info', f'Google Places API Params: {params}')
+        
         response = requests.get(google_places_api_url, params=params)
 
         try:

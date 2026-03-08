@@ -29,21 +29,24 @@ class LoggingService(metaclass=SingletonMeta):
             self.is_initialized = True
 
     def setup_logging(self):
-        # Sets up the logging configuration
-        logging.basicConfig(
-            level=self.level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            filename=self.log_file,
-            filemode='w'
-        )
+        # Sets up logging to both file and stdout
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        root_logger = logging.getLogger()
+        root_logger.setLevel(self.level)
 
-        handler = RotatingFileHandler(
+        # File handler
+        file_handler = RotatingFileHandler(
             self.log_file,
             maxBytes=self.max_bytes,
             backupCount=self.backup_count
         )
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
 
-        logging.getLogger('').addHandler(handler)
+        # Stream handler (stdout)
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        root_logger.addHandler(stream_handler)
 
     def log(self, level, message):
         # Logs a message at the specified level

@@ -6,3 +6,11 @@
 
 # Ignore logs
 app.log*
+
+venv/
+.env
+__pycache__/
+*.pyc
+commands/__pycache__/
+services/__pycache__/
+handlers/__pycache__/

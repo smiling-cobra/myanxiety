@@ -16,15 +16,13 @@ WELCOME_MESSAGE_LONG = '''
 '''
 
 WELCOME_MESSAGE_CONCISE = '''
-🌍 Welcome to TravelBot, {}! 🚀
+🌍 TravelBot welcomes you, {}! 🚀
 
 🛩️ Tell me your destination city, and I'll be your travel companion, providing valuable tips and insights for your trip!
 
-🏖️ From famous landmarks to local cuisine and weather forecasts, TravelBot has got you covered.
-
 🗺️ Let's get started! Type your destination city now and embark on a seamless travel experience.
 
-🙌 Happy travels! For assistance, just type /help anytime.
+🙌 Happy travels!
 '''
 
 DEFAULT_USER_NAME = 'traveler'
@@ -44,11 +42,6 @@ SHOW_MORE_LANDMARKS_MESSAGE = '''
 TELL_ME_MORE_ABOUT_WEATHER_MESSAGE = '''
 ☀️ Tell me more about current weather!
 '''
-
-
-def create_initial_greeting_message(user_name, user_input) -> str:
-    return f"🔥 Welcome, {user_name}! You're heading to {user_input}! Let's explore what I can do for you!"
-
 
 def create_wrong_input_message(user_name) -> str:
     return f"🤷‍♂️ Oops, {user_name}! It seems there might be a little mix-up. Feel free to try again, and I'll assist you!"

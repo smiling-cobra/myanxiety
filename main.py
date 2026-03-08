@@ -1,10 +1,11 @@
+
 import os
-import requests
+import logging
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
 from handlers import GroupMessageHandler, UserDialogueHelper
 from messages import HELP_WELCOME_MESSAGE
-from services import CityDataService, LoggingService
+from services import LoggingService
 
 telegram_bot_token = os.environ.get('TELEGRAM_TOKEN')
 geocoding_api_url = os.environ.get('GEOCODING_API_URL')
@@ -16,36 +17,28 @@ def error(update: Update, context: CallbackContext):
     pass
 
 
-def help(update: Update, context: CallbackContext):
+def help(update: Update):
     update.message.reply_text(HELP_WELCOME_MESSAGE)
     pass
 
 
-def setup_error_handler(dispatcher):
-    # Errors
-    dispatcher.add_error_handler(error)
-
-
-city_data_service = CityDataService(
-    requests,
-    google_map_api_key,
-    geocoding_api_url,
-    LoggingService()
-)
-
-
 def main() -> None:
+    # Ensure logging is configured for Docker/terminal visibility
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
+
     updater = Updater(telegram_bot_token, use_context=True)
     dispatcher = updater.dispatcher
 
     logger = LoggingService()
     logger.log('info', 'Application start')
 
-    setup_error_handler(dispatcher)
-
     conversation_handler = UserDialogueHelper(
         dispatcher,
-        city_data_service
+        logger
     )
     conversation_handler.setup()
 
