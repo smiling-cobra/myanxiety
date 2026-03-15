@@ -29,6 +29,9 @@ DEFAULT_USER_NAME = 'traveler'
 
 HELP_WELCOME_MESSAGE = '''
 Here's how you can use this bot: ...
+1. To start, simply type /start and follow the instructions.
+2. TBA
+3. TBA
 '''
 
 NO_CITY_FOUND_MESSAGE = '''

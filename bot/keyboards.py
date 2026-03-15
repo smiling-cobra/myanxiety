@@ -30,13 +30,6 @@ def get_lobby_keyboard():
     )
 
 
-def get_city_name(context: CallbackContext) -> str:
-    city_data = context.user_data.get('city_data')[0]
-    address_components = city_data.get('address_components')[0]
-    city_name = address_components.get('long_name')
-    return city_name
-
-
 def get_option_keyboard() -> InlineKeyboardMarkup:
     keyboard = [[KeyboardButton(BACK)]]
     return ReplyKeyboardMarkup(keyboard)
