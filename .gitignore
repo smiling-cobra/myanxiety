@@ -8,6 +8,7 @@
 app.log*
 
 venv/
+.venv/
 .env
 __pycache__/
 *.pyc

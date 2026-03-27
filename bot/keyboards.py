@@ -1,35 +1,26 @@
-from telegram.ext import CallbackContext
-from telegram import (
-    KeyboardButton,
-    ReplyKeyboardMarkup,
-    InlineKeyboardMarkup
-)
+from telegram import KeyboardButton, ReplyKeyboardMarkup
 
-PLACES = '🗽 Places'
-WEATHER_FORECAST = '☀️ Weather'
-AFFORDABLE_EATS = '🥗 Eats'
-EVENTS = '⭐ Events'
-TRAVEL_TIPS = '🎯 Tips'
-STORIES = '🎲 Stories'
+CHECK_IN = '📝 Check In'
+HISTORY = '📖 History'
+STATS = '📊 Stats'
 HELP = '❓ Help'
 BACK = '🔙 Back'
 
 
-def get_lobby_keyboard():
-    options = [
-        [PLACES, WEATHER_FORECAST, AFFORDABLE_EATS],
-        [EVENTS, TRAVEL_TIPS, STORIES],
-        [HELP]
-    ]
-
-    keyboard = [[KeyboardButton(option) for option in row] for row in options]
+def get_main_menu_keyboard():
     return ReplyKeyboardMarkup(
-        keyboard,
+        [[CHECK_IN], [HISTORY, STATS], [HELP]],
+        resize_keyboard=True
+    )
+
+
+def get_mood_keyboard():
+    return ReplyKeyboardMarkup(
+        [['1', '2', '3', '4', '5'], ['6', '7', '8', '9', '10']],
         resize_keyboard=True,
         one_time_keyboard=True
     )
 
 
-def get_option_keyboard() -> InlineKeyboardMarkup:
-    keyboard = [[KeyboardButton(BACK)]]
-    return ReplyKeyboardMarkup(keyboard)
+def get_back_keyboard():
+    return ReplyKeyboardMarkup([[KeyboardButton(BACK)]], resize_keyboard=True)

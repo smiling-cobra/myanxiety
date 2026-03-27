@@ -1,74 +1,75 @@
-# messages.py
+ONBOARDING_WELCOME = (
+    "Hi! I'm your private anxiety journal. 🌿\n\n"
+    "I'm here to help you process your thoughts and feelings through daily check-ins. "
+    "Over time, we'll spot patterns together.\n\n"
+    "Let's get started. What's your name?"
+)
 
-# User onboarding messages
-WELCOME_MESSAGE_LONG = '''
-🌍 Welcome to TravelBot! 🚀
+ONBOARDING_TIMEZONE = (
+    "Nice to meet you, {name}! 🙂\n\n"
+    "What timezone are you in? (e.g. Europe/London, America/New_York, Asia/Tokyo)"
+)
 
-🛩️ Are you excited about your upcoming journey? Let TravelBot be your trusty guide, providing you with all the essential information for your destination.
+ONBOARDING_TIME = (
+    "And what time would you like your daily reminder?\n"
+    "Please use 24h format, e.g. 09:00 or 21:30."
+)
 
-📍 To get started, please tell me where you're headed. Simply type the name of your destination city, and I'll fetch the best travel tips and valuable insights just for you!
+ONBOARDING_DONE = (
+    "You're all set, {name}! ✅\n\n"
+    "I'll check in with you every day at {reminder_time} ({timezone}).\n\n"
+    "Whenever you're ready, tap *Check In* to start your first entry."
+)
 
-🏖️ Whether it's exploring famous landmarks, trying local delicacies, or getting the latest weather forecast, TravelBot has got you covered.
+MAIN_MENU_MESSAGE = "What would you like to do, {name}?"
 
-🗺️ Traveling is an adventure, and TravelBot is here to make it even better. Type in your destination now to begin your journey!
+CHECK_IN_MOOD_PROMPT = (
+    "How are you feeling right now, {name}?\n\n"
+    "Rate your mood from 1 to 10 👇"
+)
 
-🙌 Happy travels! If you need any help, just type /help to see what I can assist you with.
-'''
+CHECK_IN_TEXT_PROMPT = (
+    "Got it — a {score}/10. 📝\n\n"
+    "Tell me what's on your mind. What's been going on?"
+)
 
-WELCOME_MESSAGE_CONCISE = '''
-🌍 TravelBot welcomes you, {}! 🚀
+CHECK_IN_DONE = (
+    "Thank you for sharing, {name}.\n\n"
+    "{llm_response}\n\n"
+    "_{streak} day(s) in a row. Keep it up!_"
+)
 
-🛩️ Tell me your destination city, and I'll be your travel companion, providing valuable tips and insights for your trip!
+HISTORY_EMPTY = "You haven't made any entries yet. Tap *Check In* to start!"
 
-🗺️ Let's get started! Type your destination city now and embark on a seamless travel experience.
+HISTORY_HEADER = "Here are your last {count} entries:\n\n"
 
-🙌 Happy travels!
-'''
+HISTORY_ENTRY = "📅 *{date}* — Mood: {score}/10\n{text}\n\n"
 
-DEFAULT_USER_NAME = 'traveler'
+STATS_EMPTY = "No data yet. Start checking in daily to see your stats!"
 
-HELP_WELCOME_MESSAGE = '''
-Here's how you can use this bot: ...
-1. To start, simply type /start and follow the instructions.
-2. TBA
-3. TBA
-'''
+STATS_MESSAGE = (
+    "📊 *Your stats*\n\n"
+    "🔥 Current streak: {streak} days\n"
+    "📅 Total entries: {total}\n"
+    "😊 Average mood: {avg_mood}/10\n"
+    "🏷 Top tags: {tags}"
+)
 
-NO_CITY_FOUND_MESSAGE = '''
-🤷‍♂️ Excusez-moi but no city was found... Try again!
-'''
+HELP_MESSAGE = (
+    "Here's what I can do:\n\n"
+    "*Check In* — Start your daily journal entry\n"
+    "*History* — See your last 7 entries\n"
+    "*Stats* — View your streak and mood trends\n"
+    "*/cancel* — End the current session"
+)
 
-SHOW_MORE_LANDMARKS_MESSAGE = '''
-🗽 Show me more landmarks, please!
-'''
+CANCEL_MESSAGE = "Take care, {name}. I'm here whenever you need me. 🌿"
 
-TELL_ME_MORE_ABOUT_WEATHER_MESSAGE = '''
-☀️ Tell me more about current weather!
-'''
+WRONG_TIMEZONE = (
+    "I didn't recognise that timezone. Please try again, "
+    "e.g. Europe/London or America/New_York."
+)
 
-def create_wrong_input_message(user_name) -> str:
-    return f"🤷‍♂️ Oops, {user_name}! It seems there might be a little mix-up. Feel free to try again, and I'll assist you!"
+WRONG_TIME = "Please enter time in HH:MM format, e.g. 09:00"
 
-
-def create_farewell_message(user_name) -> str:
-    return f"👋 Take care, {user_name}! Remember, I'm here whenever you need assistance or information. Safe travels!"
-
-
-def create_following_question_message(user_name) -> str:
-    return f"Hey {user_name}! I'm here to assist you. 😊 What else would you like to know or explore?"
-
-
-def create_welcome_landmarks_message(user_name, city_name) -> str:
-    return f"📍 Hey {user_name}, let's explore some of the most famous landmarks in {city_name}!"
-
-
-def create_welcome_restaurants_message(user_name, city_name) -> str:
-    return f"🥗 Hi {user_name}, looking for great places to eat in {city_name}? You're in the right place!"
-
-
-def create_weather_message(user_name, city_name, weather_desc) -> str:
-    return f"🌤️ Good day, {user_name}! Here's the weather forecast for {city_name}:\n\n{weather_desc}"
-
-
-def create_interesting_facts_message(city_name) -> str:
-    return f"🤓 Sure thing! Let me share some fascinating facts about {city_name} with you."
+WRONG_MOOD = "Please enter a number between 1 and 10."

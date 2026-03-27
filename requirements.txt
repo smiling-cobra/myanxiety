@@ -5,3 +5,6 @@ flake8
 black
 pymongo[srv]
 python-dotenv
+pytest>=7.0
+pytest-mock
+mongomock
