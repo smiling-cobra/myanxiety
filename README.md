@@ -1,19 +1,50 @@
-# tr4v31_b0t
+# AnxietyJournal Bot
 
-### Show all docker  containers
-    docker ps
+A private Telegram chatbot for daily mood check-ins and anxiety journalling. Replies empathetically via Claude, tracks streaks, and surfaces patterns over time.
 
-### Run docker console
-    docker exec -it <container_id> /bin/bash
+## Requirements
 
-### Build container from image
-    docker build -t tr4v31_b0t-telegram_bot .
+- Python 3.11+
+- MongoDB
+- Telegram bot token
+- Anthropic API key
 
-### Run container
-    docker-compose up
+## Setup
 
-### Foursquare docs
-    https://location.foursquare.com/developer/reference/response-fields
+Copy `.env.example` to `.env` and fill in the values:
 
-### Ticketmaster docs
-    https://developer.ticketmaster.com/products-and-docs/apis/discovery-api/v2/#search-events-v2
+```
+TELEGRAM_TOKEN=
+CLAUDE_API_KEY=
+MONGODB_URI=
+```
+
+## Run
+
+```bash
+# Directly
+python3 main.py
+
+# Via Docker
+docker-compose up
+```
+
+## Test
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/pytest
+```
+
+## Docker
+
+```bash
+# Build image
+docker build -t anxiety-journal-bot .
+
+# List running containers
+docker ps
+
+# Open shell in container
+docker exec -it <container_id> /bin/bash
+```
