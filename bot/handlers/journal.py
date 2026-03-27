@@ -44,6 +44,13 @@ logger = logging.getLogger(__name__)
 
 ONBOARDING_NAME, ONBOARDING_TIMEZONE, ONBOARDING_TIME, MAIN_MENU, CHECK_IN_MOOD, CHECK_IN_TEXT = range(6)
 
+
+def _escape_md(text: str) -> str:
+    """Escape Markdown v1 special characters in user-supplied or external text."""
+    for char in ('*', '_', '`', '['):
+        text = text.replace(char, f'\\{char}')
+    return text
+
 _user_svc = UserService()
 _journal_svc = JournalService()
 _llm_svc = LlmService()
@@ -160,7 +167,7 @@ def handle_entry_text(update: Update, context: CallbackContext) -> int:
     llm_response = _llm_svc.get_empathetic_response(mood_score, text)
 
     update.message.reply_text(
-        CHECK_IN_DONE.format(name=name, llm_response=llm_response, streak=stats['streak']),
+        CHECK_IN_DONE.format(name=_escape_md(name), llm_response=_escape_md(llm_response), streak=stats['streak']),
         reply_markup=get_main_menu_keyboard(),
         parse_mode='Markdown',
     )
@@ -179,7 +186,7 @@ def _show_history(update: Update, context: CallbackContext) -> int:
     body = HISTORY_HEADER.format(count=len(entries))
     for e in entries:
         date_str = e['created_at'].strftime('%d %b %Y')
-        body += HISTORY_ENTRY.format(date=date_str, score=e['mood_score'], text=e['text'][:200])
+        body += HISTORY_ENTRY.format(date=date_str, score=e['mood_score'], text=_escape_md(e['text'][:200]))
 
     update.message.reply_text(body, parse_mode='Markdown', reply_markup=get_main_menu_keyboard())
     return MAIN_MENU

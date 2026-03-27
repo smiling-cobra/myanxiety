@@ -24,9 +24,7 @@ def svc():
 def _save_on(svc: JournalService, d: date, mood: int = 5, text: str = "entry") -> None:
     """Save an entry as if it happened on the given date."""
     dt = datetime(d.year, d.month, d.day, 10, 0)
-    with patch('services.journal_service.date') as mock_date, \
-         patch('services.journal_service.datetime') as mock_dt:
-        mock_date.today.return_value = d
+    with patch('services.journal_service.datetime') as mock_dt:
         mock_dt.utcnow.return_value = dt
         svc.save_entry(USER, mood, text)
 

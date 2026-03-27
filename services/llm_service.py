@@ -5,11 +5,16 @@ import anthropic
 
 logger = logging.getLogger(__name__)
 
-_client = anthropic.Anthropic(api_key=os.environ.get('CLAUDE_API_KEY'))
 _MODEL = 'claude-sonnet-4-20250514'
 
 
 class LlmService:
+    def __init__(self):
+        api_key = os.environ.get('CLAUDE_API_KEY')
+        if not api_key:
+            raise ValueError('CLAUDE_API_KEY is not set in environment variables')
+        self._client = anthropic.Anthropic(api_key=api_key)
+
     def get_empathetic_response(self, mood_score: int, entry_text: str) -> str:
         prompt = (
             f"You are a compassionate, private journal assistant helping someone process anxiety.\n\n"
@@ -42,7 +47,7 @@ class LlmService:
 
     def _call(self, prompt: str) -> str:
         try:
-            message = _client.messages.create(
+            message = self._client.messages.create(
                 model=_MODEL,
                 max_tokens=512,
                 messages=[{'role': 'user', 'content': prompt}]

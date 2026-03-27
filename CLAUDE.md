@@ -18,9 +18,11 @@ docker-compose up
 # Lint / format
 flake8
 black .
-```
 
-No test suite exists — the project is tested manually via Telegram.
+# Run tests
+python -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/pytest
+```
 
 ## Architecture
 

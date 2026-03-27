@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from repositories.entry_repo import EntryRepository
 from repositories.streak_repo import StreakRepository
@@ -31,7 +31,7 @@ class JournalService:
         }
 
     def _update_streak(self, telegram_id: int) -> None:
-        today = date.today()
+        today = datetime.utcnow().date()
         doc = self._streaks.get_full(telegram_id)
         if doc is None:
             self._streaks.update(telegram_id, 1, datetime.utcnow())

@@ -9,11 +9,14 @@ logging.basicConfig(
 
 from telegram.ext import Updater
 from bot.handlers import commands, journal
+from db.db import get_db
 
 telegram_bot_token = os.environ.get('TELEGRAM_TOKEN')
 
-    
+
 def main() -> None:
+    get_db()  # initialise MongoDB before worker threads start
+
     updater = Updater(telegram_bot_token, use_context=True)
     dispatcher = updater.dispatcher
 
