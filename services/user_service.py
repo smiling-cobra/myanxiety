@@ -13,6 +13,9 @@ class UserService:
     def get(self, telegram_id: int) -> dict | None:
         return self._repo.find(telegram_id)
 
+    def get_all_onboarded(self) -> list:
+        return self._repo.find_all_onboarded()
+
     def is_onboarded(self, telegram_id: int) -> bool:
         user = self._repo.find(telegram_id)
         return user is not None and user.get('onboarded', False)

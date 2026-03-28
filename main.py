@@ -10,6 +10,7 @@ logging.basicConfig(
 from telegram.ext import Updater
 from bot.handlers import commands, journal
 from db.db import get_db
+from services.scheduler_service import SchedulerService
 
 telegram_bot_token = os.environ.get('TELEGRAM_TOKEN')
 
@@ -24,6 +25,8 @@ def main() -> None:
 
     commands.register(dispatcher)
     journal.register(dispatcher)
+
+    SchedulerService().start(updater.job_queue)
 
     # Start polling the bot for updates
     logging.info('Pooooolling...')

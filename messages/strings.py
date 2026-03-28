@@ -84,4 +84,9 @@ WRONG_TIMEZONE = (
 
 WRONG_TIME = "Please enter time in HH:MM format, e.g. 09:00"
 
+REMINDER_MESSAGE = (
+    "Hey {name}, time for your daily check-in! 🌿\n\n"
+    "Tap *Check In* whenever you're ready."
+)
+
 WRONG_MOOD = "Please enter a number between 1 and 10."
