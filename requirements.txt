@@ -4,6 +4,7 @@ anthropic
 flake8
 black
 pymongo[srv]
+timezonefinder
 python-dotenv
 pytest>=7.0
 pytest-mock

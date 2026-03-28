@@ -22,5 +22,13 @@ def get_mood_keyboard():
     )
 
 
+def get_timezone_keyboard():
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton('📍 Share my location', request_location=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
 def get_back_keyboard():
     return ReplyKeyboardMarkup([[KeyboardButton(BACK)]], resize_keyboard=True)
