@@ -104,11 +104,11 @@ def handle_timezone_location(update: Update, context: CallbackContext) -> int:
         return ONBOARDING_TIMEZONE
     context.user_data['timezone'] = tz_str
     update.message.reply_text(
-        TIMEZONE_DETECTED.format(timezone=tz_str),
+        TIMEZONE_DETECTED.format(timezone=_escape_md(tz_str)),
         parse_mode='Markdown',
         reply_markup=get_timezone_keyboard(),
     )
-    update.message.reply_text(ONBOARDING_TIME_MSG)
+    update.message.reply_text(ONBOARDING_TIME_MSG, reply_markup=ReplyKeyboardRemove())
     return ONBOARDING_TIME
 
 
@@ -119,7 +119,7 @@ def handle_timezone(update: Update, context: CallbackContext) -> int:
     try:
         ZoneInfo(tz_str)
         context.user_data['timezone'] = tz_str
-        update.message.reply_text(ONBOARDING_TIME_MSG)
+        update.message.reply_text(ONBOARDING_TIME_MSG, reply_markup=ReplyKeyboardRemove())
         return ONBOARDING_TIME
     except (ZoneInfoNotFoundError, KeyError):
         pass
@@ -129,10 +129,10 @@ def handle_timezone(update: Update, context: CallbackContext) -> int:
     if len(matches) == 1:
         context.user_data['timezone'] = matches[0]
         update.message.reply_text(
-            TIMEZONE_DETECTED.format(timezone=matches[0]),
+            TIMEZONE_DETECTED.format(timezone=_escape_md(matches[0])),
             parse_mode='Markdown',
         )
-        update.message.reply_text(ONBOARDING_TIME_MSG)
+        update.message.reply_text(ONBOARDING_TIME_MSG, reply_markup=ReplyKeyboardRemove())
         return ONBOARDING_TIME
     if 1 < len(matches) <= 5:
         kb = ReplyKeyboardMarkup([[m] for m in matches], resize_keyboard=True, one_time_keyboard=True)
@@ -163,7 +163,7 @@ def handle_reminder_time(update: Update, context: CallbackContext) -> int:
         onboarded=True,
     )
     update.message.reply_text(
-        ONBOARDING_DONE.format(name=name, reminder_time=time_str, timezone=timezone),
+        ONBOARDING_DONE.format(name=_escape_md(name), reminder_time=time_str, timezone=timezone),
         reply_markup=get_main_menu_keyboard(),
         parse_mode='Markdown',
     )

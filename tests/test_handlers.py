@@ -95,6 +95,24 @@ class TestHandleTimezone:
         assert result == ONBOARDING_TIME
         assert ctx.user_data['timezone'] == 'America/New_York'
 
+    def test_valid_iana_timezone_removes_keyboard(self):
+        from telegram import ReplyKeyboardRemove
+        update = _update('Europe/London')
+        handle_timezone(update, _context({'name': 'Alice'}))
+        assert any(
+            isinstance(call.kwargs.get('reply_markup'), ReplyKeyboardRemove)
+            for call in update.message.reply_text.call_args_list
+        )
+
+    def test_city_name_single_match_removes_keyboard(self):
+        from telegram import ReplyKeyboardRemove
+        update = _update('London')
+        handle_timezone(update, _context({'name': 'Alice'}))
+        assert any(
+            isinstance(call.kwargs.get('reply_markup'), ReplyKeyboardRemove)
+            for call in update.message.reply_text.call_args_list
+        )
+
     # --- fuzzy multi-match (2-5): show keyboard, stay ---
 
     def test_city_name_multiple_matches_stays_on_timezone(self):
@@ -132,6 +150,17 @@ class TestHandleTimezoneLocation:
             mock_tf.timezone_at.return_value = 'Europe/Berlin'
             handle_timezone_location(_location_update(52.52, 13.405), ctx)
         assert ctx.user_data['timezone'] == 'Europe/Berlin'
+
+    def test_valid_location_removes_keyboard(self):
+        from telegram import ReplyKeyboardRemove
+        update = _location_update(52.52, 13.405)
+        with patch('bot.handlers.journal._tf') as mock_tf:
+            mock_tf.timezone_at.return_value = 'Europe/Berlin'
+            handle_timezone_location(update, _context({'name': 'Alice'}))
+        assert any(
+            isinstance(call.kwargs.get('reply_markup'), ReplyKeyboardRemove)
+            for call in update.message.reply_text.call_args_list
+        )
 
     def test_unresolvable_location_stays_on_timezone(self):
         # timezonefinder returns None for open ocean coordinates

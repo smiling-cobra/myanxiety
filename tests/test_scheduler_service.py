@@ -6,9 +6,8 @@ DB and bot interactions are mocked — no real connections made.
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 from services.scheduler_service import SchedulerService
 
@@ -80,6 +79,20 @@ class TestIsDue:
     def test_invalid_timezone_is_not_due(self):
         svc = _svc()
         assert svc._is_due(_user(timezone='Invalid/Zone')) is False
+
+    def test_missing_reminder_time_is_not_due(self):
+        svc = _svc()
+        user = _user()
+        del user['reminder_time']
+        assert svc._is_due(user) is False
+
+    def test_malformed_reminder_time_is_not_due(self):
+        svc = _svc()
+        assert svc._is_due(_user(reminder_time='not-a-time')) is False
+
+    def test_reminder_time_missing_minutes_is_not_due(self):
+        svc = _svc()
+        assert svc._is_due(_user(reminder_time='09')) is False
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +192,16 @@ class TestSendReminders:
             svc._send_reminders(ctx)
         # Bob's message still attempted despite Alice failing
         assert ctx.bot.send_message.call_count == 2
+
+    def test_message_escapes_markdown_special_chars_in_name(self):
+        svc = _svc()
+        svc._user_svc.get_all_onboarded.return_value = [_user(name='_Alice_')]
+        ctx = self._context()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-28')
+            svc._send_reminders(ctx)
+        sent_text = ctx.bot.send_message.call_args.kwargs['text']
+        assert '\\_Alice\\_' in sent_text
 
     def test_sends_to_multiple_due_users(self):
         svc = _svc()

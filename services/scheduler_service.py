@@ -12,6 +12,12 @@ logger = logging.getLogger(__name__)
 _INTERVAL_SECONDS = 60
 
 
+def _escape_md(text: str) -> str:
+    for char in ('*', '_', '`', '['):
+        text = text.replace(char, f'\\{char}')
+    return text
+
+
 class SchedulerService:
     def __init__(self):
         self._user_svc = UserService()
@@ -27,7 +33,7 @@ class SchedulerService:
                 try:
                     context.bot.send_message(
                         chat_id=user['telegram_id'],
-                        text=REMINDER_MESSAGE.format(name=user['name']),
+                        text=REMINDER_MESSAGE.format(name=_escape_md(user['name'])),
                         parse_mode='Markdown',
                     )
                     self._user_svc.create_or_update(
@@ -41,11 +47,11 @@ class SchedulerService:
     def _is_due(self, user: dict) -> bool:
         try:
             tz = ZoneInfo(user['timezone'])
+            now = datetime.now(tz)
+            h, m = map(int, user['reminder_time'].split(':'))
+            return now.hour == h and now.minute == m
         except Exception:
             return False
-        now = datetime.now(tz)
-        h, m = map(int, user['reminder_time'].split(':'))
-        return now.hour == h and now.minute == m
 
     def _sent_today(self, user: dict) -> bool:
         last = user.get('last_reminder_sent')
