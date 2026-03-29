@@ -7,7 +7,19 @@ ONBOARDING_WELCOME = (
 
 ONBOARDING_TIMEZONE = (
     "Nice to meet you, {name}! 🙂\n\n"
-    "What timezone are you in? (e.g. Europe/London, America/New_York, Asia/Tokyo)"
+    "Tap the button below to share your location — I'll detect your timezone automatically.\n\n"
+    "Or type it manually, e.g. Europe/London or America/New_York."
+)
+
+TIMEZONE_DETECTED = "Got it — I've set your timezone to *{timezone}*."
+
+TIMEZONE_DETECTION_FAILED = (
+    "I couldn't detect a timezone from that location. "
+    "Please type it manually, e.g. Europe/London or America/New_York."
+)
+
+TIMEZONE_SUGGESTIONS = (
+    "I found a few matches for \"{query}\". Which one is yours?"
 )
 
 ONBOARDING_TIME = (
@@ -71,5 +83,10 @@ WRONG_TIMEZONE = (
 )
 
 WRONG_TIME = "Please enter time in HH:MM format, e.g. 09:00"
+
+REMINDER_MESSAGE = (
+    "Hey {name}, time for your daily check-in! 🌿\n\n"
+    "Tap *Check In* whenever you're ready."
+)
 
 WRONG_MOOD = "Please enter a number between 1 and 10."

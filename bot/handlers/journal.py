@@ -1,9 +1,9 @@
 import logging
 import re
 from collections import Counter
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from telegram import ReplyKeyboardRemove, Update
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     CallbackContext,
     CommandHandler,
@@ -11,10 +11,11 @@ from telegram.ext import (
     Filters,
     MessageHandler,
 )
+from timezonefinder import TimezoneFinder
 
 from bot.keyboards import (
     CHECK_IN, HELP, HISTORY, STATS,
-    get_main_menu_keyboard, get_mood_keyboard,
+    get_main_menu_keyboard, get_mood_keyboard, get_timezone_keyboard,
 )
 from messages.strings import (
     CANCEL_MESSAGE,
@@ -32,6 +33,9 @@ from messages.strings import (
     ONBOARDING_WELCOME,
     STATS_EMPTY,
     STATS_MESSAGE,
+    TIMEZONE_DETECTED,
+    TIMEZONE_DETECTION_FAILED,
+    TIMEZONE_SUGGESTIONS,
     WRONG_MOOD,
     WRONG_TIME,
     WRONG_TIMEZONE,
@@ -41,6 +45,14 @@ from services.llm_service import LlmService
 from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
+_tf = TimezoneFinder()
+_ALL_TIMEZONES = sorted(available_timezones())
+
+
+def _search_timezones(query: str) -> list:
+    """Return IANA timezone names that contain the query (case-insensitive, spaces→underscores)."""
+    needle = query.strip().replace(' ', '_').lower()
+    return [tz for tz in _ALL_TIMEZONES if needle in tz.lower()]
 
 ONBOARDING_NAME, ONBOARDING_TIMEZONE, ONBOARDING_TIME, MAIN_MENU, CHECK_IN_MOOD, CHECK_IN_TEXT = range(6)
 
@@ -77,20 +89,58 @@ def start(update: Update, context: CallbackContext) -> int:
 def handle_name(update: Update, context: CallbackContext) -> int:
     name = update.message.text.strip()
     context.user_data['name'] = name
-    update.message.reply_text(ONBOARDING_TIMEZONE_MSG.format(name=name))
+    update.message.reply_text(
+        ONBOARDING_TIMEZONE_MSG.format(name=name),
+        reply_markup=get_timezone_keyboard(),
+    )
     return ONBOARDING_TIMEZONE
+
+
+def handle_timezone_location(update: Update, context: CallbackContext) -> int:
+    loc = update.message.location
+    tz_str = _tf.timezone_at(lat=loc.latitude, lng=loc.longitude)
+    if not tz_str:
+        update.message.reply_text(TIMEZONE_DETECTION_FAILED, reply_markup=get_timezone_keyboard())
+        return ONBOARDING_TIMEZONE
+    context.user_data['timezone'] = tz_str
+    update.message.reply_text(
+        TIMEZONE_DETECTED.format(timezone=_escape_md(tz_str)),
+        parse_mode='Markdown',
+        reply_markup=get_timezone_keyboard(),
+    )
+    update.message.reply_text(ONBOARDING_TIME_MSG, reply_markup=ReplyKeyboardRemove())
+    return ONBOARDING_TIME
 
 
 def handle_timezone(update: Update, context: CallbackContext) -> int:
     tz_str = update.message.text.strip()
+
+    # Exact IANA match
     try:
         ZoneInfo(tz_str)
+        context.user_data['timezone'] = tz_str
+        update.message.reply_text(ONBOARDING_TIME_MSG, reply_markup=ReplyKeyboardRemove())
+        return ONBOARDING_TIME
     except (ZoneInfoNotFoundError, KeyError):
-        update.message.reply_text(WRONG_TIMEZONE)
+        pass
+
+    # Fuzzy substring search
+    matches = _search_timezones(tz_str)
+    if len(matches) == 1:
+        context.user_data['timezone'] = matches[0]
+        update.message.reply_text(
+            TIMEZONE_DETECTED.format(timezone=_escape_md(matches[0])),
+            parse_mode='Markdown',
+        )
+        update.message.reply_text(ONBOARDING_TIME_MSG, reply_markup=ReplyKeyboardRemove())
+        return ONBOARDING_TIME
+    if 1 < len(matches) <= 5:
+        kb = ReplyKeyboardMarkup([[m] for m in matches], resize_keyboard=True, one_time_keyboard=True)
+        update.message.reply_text(TIMEZONE_SUGGESTIONS.format(query=tz_str), reply_markup=kb)
         return ONBOARDING_TIMEZONE
-    context.user_data['timezone'] = tz_str
-    update.message.reply_text(ONBOARDING_TIME_MSG)
-    return ONBOARDING_TIME
+
+    update.message.reply_text(WRONG_TIMEZONE)
+    return ONBOARDING_TIMEZONE
 
 
 def handle_reminder_time(update: Update, context: CallbackContext) -> int:
@@ -113,7 +163,7 @@ def handle_reminder_time(update: Update, context: CallbackContext) -> int:
         onboarded=True,
     )
     update.message.reply_text(
-        ONBOARDING_DONE.format(name=name, reminder_time=time_str, timezone=timezone),
+        ONBOARDING_DONE.format(name=_escape_md(name), reminder_time=time_str, timezone=timezone),
         reply_markup=get_main_menu_keyboard(),
         parse_mode='Markdown',
     )
@@ -229,7 +279,10 @@ def register(dispatcher) -> None:
         entry_points=[CommandHandler('start', start)],
         states={
             ONBOARDING_NAME: [MessageHandler(Filters.text & ~Filters.command, handle_name)],
-            ONBOARDING_TIMEZONE: [MessageHandler(Filters.text & ~Filters.command, handle_timezone)],
+            ONBOARDING_TIMEZONE: [
+                MessageHandler(Filters.location, handle_timezone_location),
+                MessageHandler(Filters.text & ~Filters.command, handle_timezone),
+            ],
             ONBOARDING_TIME: [MessageHandler(Filters.text & ~Filters.command, handle_reminder_time)],
             MAIN_MENU: [MessageHandler(Filters.text & ~Filters.command, handle_main_menu)],
             CHECK_IN_MOOD: [MessageHandler(Filters.text & ~Filters.command, handle_mood)],
