@@ -71,8 +71,38 @@ HELP_MESSAGE = (
     "Here's what I can do:\n\n"
     "*Check In* — Start your daily journal entry\n"
     "*History* — See your last 7 entries\n"
-    "*Stats* — View your streak and mood trends\n"
+    "*Stats* — View your streak and mood trends\n\n"
+    "You can also use these commands any time:\n"
+    "*/history* — Show your recent entries\n"
+    "*/stats* — Show your stats\n"
     "*/cancel* — End the current session"
+)
+
+ERROR_GENERIC = "Something went wrong. Please try again."
+
+GUIDANCE_OFFER_LOW = (
+    "You're dealing with something heavy right now. "
+    "Would you like a few evidence-based coping strategies tailored to what you shared?"
+)
+
+GUIDANCE_OFFER_VERY_LOW = (
+    "That sounds really hard — I want to make sure you have some support right now. "
+    "Would you like a few grounding techniques to help you get through this moment?"
+)
+
+GUIDANCE_DECLINED = "Of course. I'm here whenever you need me. Take gentle care of yourself. 🌿"
+
+GUIDANCE_ERROR_MESSAGE = (
+    "I wasn't able to generate suggestions right now. "
+    "Please try again later, or reach out to someone you trust."
+)
+
+GUIDANCE_CRISIS_RESOURCES = (
+    "———\n"
+    "If you're in crisis or having thoughts of harming yourself, please reach out:\n"
+    "• *International crisis centres*: iasp.info/resources/Crisis\\_Centres\n"
+    "• *Crisis Text Line* (US/UK/CA/IE): text HOME to 741741\n"
+    "• *Samaritans* (UK/IE): 116 123"
 )
 
 CANCEL_MESSAGE = "Take care, {name}. I'm here whenever you need me. 🌿"

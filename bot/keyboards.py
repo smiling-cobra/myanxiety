@@ -22,6 +22,18 @@ def get_mood_keyboard():
     )
 
 
+GUIDANCE_YES = '💡 Yes, show me some guidance'
+GUIDANCE_NO = "No thanks, I'm done for now"
+
+
+def get_guidance_keyboard():
+    return ReplyKeyboardMarkup(
+        [[GUIDANCE_YES], [GUIDANCE_NO]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
 def get_timezone_keyboard():
     return ReplyKeyboardMarkup(
         [[KeyboardButton('📍 Share my location', request_location=True)]],
