@@ -75,6 +75,7 @@ HELP_MESSAGE = (
     "You can also use these commands any time:\n"
     "*/history* — Show your recent entries\n"
     "*/stats* — Show your stats\n"
+    "*/summary* — Show your weekly mood summary\n"
     "*/cancel* — End the current session"
 )
 
@@ -103,6 +104,26 @@ GUIDANCE_CRISIS_RESOURCES = (
     "• *International crisis centres*: iasp.info/resources/Crisis\\_Centres\n"
     "• *Crisis Text Line* (US/UK/CA/IE): text HOME to 741741\n"
     "• *Samaritans* (UK/IE): 116 123"
+)
+
+WEEKLY_SUMMARY_EMPTY = (
+    "No check-ins this week yet. Start today with *Check In*! ✨"
+)
+
+WEEKLY_SUMMARY_HEADER = "📈 *Your week — {date_from} to {date_to}* ({count} entries)\n\n"
+
+WEEKLY_SUMMARY_TREND_ROW = "*{score}*/10  {bar}  {day}\n"
+
+WEEKLY_SUMMARY_TAGS = "\n🏷 *Top themes*: {tags}\n"
+
+WEEKLY_SUMMARY_LLM_INTRO = "\n💬 *Patterns this week*\n"
+
+WEEKLY_SUMMARY_TOO_FEW = "\n_Check in a few more times this week for pattern insights._"
+
+WEEKLY_SUMMARY_NOTIFICATION = (
+    "📈 *Your weekly insight*\n\n"
+    "{summary}\n\n"
+    "_Open your journal to see the full mood trend._"
 )
 
 CANCEL_MESSAGE = "Take care, {name}. I'm here whenever you need me. 🌿"

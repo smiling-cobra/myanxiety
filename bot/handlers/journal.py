@@ -14,7 +14,7 @@ from telegram.ext import (
 from timezonefinder import TimezoneFinder
 
 from bot.keyboards import (
-    CHECK_IN, GUIDANCE_NO, GUIDANCE_YES, HELP, HISTORY, STATS,
+    CHECK_IN, GUIDANCE_NO, GUIDANCE_YES, HELP, HISTORY, STATS, WEEKLY_SUMMARY,
     get_guidance_keyboard, get_main_menu_keyboard, get_mood_keyboard, get_timezone_keyboard,
 )
 from messages.strings import (
@@ -39,6 +39,12 @@ from messages.strings import (
     ONBOARDING_WELCOME,
     STATS_EMPTY,
     STATS_MESSAGE,
+    WEEKLY_SUMMARY_EMPTY,
+    WEEKLY_SUMMARY_HEADER,
+    WEEKLY_SUMMARY_LLM_INTRO,
+    WEEKLY_SUMMARY_TAGS,
+    WEEKLY_SUMMARY_TOO_FEW,
+    WEEKLY_SUMMARY_TREND_ROW,
     TIMEZONE_DETECTED,
     TIMEZONE_DETECTION_FAILED,
     TIMEZONE_SUGGESTIONS,
@@ -195,6 +201,9 @@ def handle_main_menu(update: Update, context: CallbackContext) -> int:
     if choice == STATS:
         return show_stats(update, context)
 
+    if choice == WEEKLY_SUMMARY:
+        return show_weekly_summary(update, context)
+
     if choice == HELP:
         update.message.reply_text(HELP_MESSAGE, parse_mode='Markdown')
         return MAIN_MENU
@@ -297,6 +306,54 @@ def show_stats(update: Update, context: CallbackContext) -> int:
     return MAIN_MENU
 
 
+_MIN_ENTRIES_FOR_LLM_SUMMARY = 3
+
+
+def _mood_bar(score: int) -> str:
+    n = max(0, min(10, score))
+    return '▓' * n + '░' * (10 - n)
+
+
+def show_weekly_summary(update: Update, context: CallbackContext) -> int:
+    telegram_id = update.effective_user.id
+    try:
+        entries = _journal_svc.get_weekly_entries(telegram_id)
+    except Exception:
+        logger.exception('Failed to load weekly entries for user %s', telegram_id)
+        update.message.reply_text(ERROR_GENERIC, reply_markup=get_main_menu_keyboard())
+        return MAIN_MENU
+
+    if not entries:
+        update.message.reply_text(
+            WEEKLY_SUMMARY_EMPTY, parse_mode='Markdown', reply_markup=get_main_menu_keyboard()
+        )
+        return MAIN_MENU
+
+    date_from = entries[0]['created_at'].strftime('%d %b')
+    date_to = entries[-1]['created_at'].strftime('%d %b')
+    body = WEEKLY_SUMMARY_HEADER.format(date_from=date_from, date_to=date_to, count=len(entries))
+
+    for e in entries:
+        body += WEEKLY_SUMMARY_TREND_ROW.format(
+            score=e['mood_score'],
+            bar=_mood_bar(e['mood_score']),
+            day=e['created_at'].strftime('%a %d %b'),
+        )
+
+    all_tags = [tag for e in entries for tag in e.get('tags', [])]
+    top_tags = ', '.join(f'#{t}' for t, _ in Counter(all_tags).most_common(5)) or 'none yet'
+    body += WEEKLY_SUMMARY_TAGS.format(tags=top_tags)
+
+    if len(entries) >= _MIN_ENTRIES_FOR_LLM_SUMMARY:
+        body += WEEKLY_SUMMARY_LLM_INTRO
+        body += _escape_md(_llm_svc.get_weekly_summary(entries))
+    else:
+        body += WEEKLY_SUMMARY_TOO_FEW
+
+    update.message.reply_text(body, parse_mode='Markdown', reply_markup=get_main_menu_keyboard())
+    return MAIN_MENU
+
+
 def handle_guidance_offer(update: Update, context: CallbackContext) -> int:
     if update.message.text != GUIDANCE_YES:
         update.message.reply_text(GUIDANCE_DECLINED, reply_markup=get_main_menu_keyboard())
@@ -330,6 +387,7 @@ def register(dispatcher) -> None:
             CommandHandler('start', start),
             CommandHandler('history', show_history),
             CommandHandler('stats', show_stats),
+            CommandHandler('summary', show_weekly_summary),
         ],
         states={
             ONBOARDING_NAME: [MessageHandler(Filters.text & ~Filters.command, handle_name)],
@@ -342,6 +400,7 @@ def register(dispatcher) -> None:
                 MessageHandler(Filters.text & ~Filters.command, handle_main_menu),
                 CommandHandler('history', show_history),
                 CommandHandler('stats', show_stats),
+                CommandHandler('summary', show_weekly_summary),
             ],
             CHECK_IN_MOOD: [MessageHandler(Filters.text & ~Filters.command, handle_mood)],
             CHECK_IN_TEXT: [MessageHandler(Filters.text & ~Filters.command, handle_entry_text)],

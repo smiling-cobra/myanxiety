@@ -3,13 +3,14 @@ from telegram import KeyboardButton, ReplyKeyboardMarkup
 CHECK_IN = '📝 Check In'
 HISTORY = '📖 History'
 STATS = '📊 Stats'
+WEEKLY_SUMMARY = '📈 Weekly Summary'
 HELP = '❓ Help'
 BACK = '🔙 Back'
 
 
 def get_main_menu_keyboard():
     return ReplyKeyboardMarkup(
-        [[CHECK_IN], [HISTORY, STATS], [HELP]],
+        [[CHECK_IN], [HISTORY, STATS], [WEEKLY_SUMMARY], [HELP]],
         resize_keyboard=True
     )
 

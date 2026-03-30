@@ -16,6 +16,13 @@ class EntryRepository:
     def count(self, telegram_id: int) -> int:
         return entries_collection().count_documents({'telegram_id': telegram_id})
 
+    def find_since(self, telegram_id: int, since) -> list:
+        return list(
+            entries_collection()
+            .find({'telegram_id': telegram_id, 'created_at': {'$gte': since}}, {'_id': 0})
+            .sort('created_at', 1)
+        )
+
     def average_mood(self, telegram_id: int) -> float:
         pipeline = [
             {'$match': {'telegram_id': telegram_id}},
