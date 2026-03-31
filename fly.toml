@@ -1,0 +1,14 @@
+# fly.toml app configuration file generated for anxiety-journal-bot on 2026-03-28T00:45:57+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'anxiety-journal-bot'
+primary_region = 'lhr'
+
+[build]
+
+[[vm]]
+  memory = '256mb'
+  cpus = 1
+  memory_mb = 256
