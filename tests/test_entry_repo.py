@@ -1,7 +1,7 @@
 """Tests for EntryRepository — MongoDB read/write operations."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -66,6 +66,40 @@ class TestFindRecent:
         results = repo.find_recent(USER)
         assert len(results) == 1
         assert results[0]['text'] == "mine"
+
+
+class TestFindSince:
+    def test_returns_entries_on_or_after_since(self, repo):
+        now = datetime.utcnow()
+        repo.save(_entry(5, "recent", now))
+        repo.save(_entry(4, "old", now - timedelta(days=10)))
+        results = repo.find_since(USER, now - timedelta(days=1))
+        assert len(results) == 1
+        assert results[0]['text'] == "recent"
+
+    def test_returns_entries_in_ascending_order(self, repo):
+        now = datetime.utcnow()
+        repo.save(_entry(7, "later", now))
+        repo.save(_entry(3, "earlier", now - timedelta(days=2)))
+        results = repo.find_since(USER, now - timedelta(days=3))
+        assert results[0]['text'] == "earlier"
+        assert results[1]['text'] == "later"
+
+    def test_returns_empty_when_no_entries_in_range(self, repo):
+        now = datetime.utcnow()
+        repo.save(_entry(5, "old", now - timedelta(days=10)))
+        assert repo.find_since(USER, now - timedelta(days=1)) == []
+
+    def test_is_user_scoped(self, repo):
+        now = datetime.utcnow()
+        repo.save(_entry(7, "mine"))
+        repo.save(_entry(5, "theirs", user=OTHER))
+        results = repo.find_since(USER, now - timedelta(hours=1))
+        assert len(results) == 1
+        assert results[0]['text'] == "mine"
+
+    def test_empty_repo_returns_empty_list(self, repo):
+        assert repo.find_since(USER, datetime.utcnow() - timedelta(days=7)) == []
 
 
 class TestAverageMood:

@@ -23,6 +23,10 @@ class JournalService:
     def get_recent_entries(self, telegram_id: int, limit: int = 7) -> list:
         return self._entries.find_recent(telegram_id, limit)
 
+    def get_weekly_entries(self, telegram_id: int) -> list:
+        since = datetime.utcnow() - timedelta(days=7)
+        return self._entries.find_since(telegram_id, since)
+
     def get_stats(self, telegram_id: int) -> dict:
         return {
             'streak': self._streaks.get(telegram_id),

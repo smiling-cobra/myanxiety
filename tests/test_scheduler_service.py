@@ -22,6 +22,7 @@ def _user(
     timezone: str = 'Europe/London',
     reminder_time: str = '09:00',
     last_reminder_sent: str | None = None,
+    last_weekly_summary_sent: str | None = None,
 ) -> dict:
     u = {
         'telegram_id': telegram_id,
@@ -32,12 +33,16 @@ def _user(
     }
     if last_reminder_sent is not None:
         u['last_reminder_sent'] = last_reminder_sent
+    if last_weekly_summary_sent is not None:
+        u['last_weekly_summary_sent'] = last_weekly_summary_sent
     return u
 
 
 def _svc() -> SchedulerService:
     svc = SchedulerService.__new__(SchedulerService)
     svc._user_svc = MagicMock()
+    svc._journal_svc = MagicMock()
+    svc._llm_svc = MagicMock()
     return svc
 
 
@@ -229,3 +234,113 @@ class TestStart:
         args, kwargs = job_queue.run_repeating.call_args
         assert args[0] == svc._send_reminders
         assert kwargs.get('interval') == 60 or args[1] == 60
+
+
+# ---------------------------------------------------------------------------
+# _is_weekly_summary_due
+# ---------------------------------------------------------------------------
+
+class TestIsWeeklySummaryDue:
+    def test_due_when_never_sent(self):
+        svc = _svc()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-29')
+            assert svc._is_weekly_summary_due(_user()) is True
+
+    def test_due_when_7_days_since_last(self):
+        svc = _svc()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-29')
+            assert svc._is_weekly_summary_due(
+                _user(last_weekly_summary_sent='2026-03-22')
+            ) is True
+
+    def test_not_due_when_sent_today(self):
+        svc = _svc()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-29')
+            assert svc._is_weekly_summary_due(
+                _user(last_weekly_summary_sent='2026-03-29')
+            ) is False
+
+    def test_not_due_when_sent_3_days_ago(self):
+        svc = _svc()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-29')
+            assert svc._is_weekly_summary_due(
+                _user(last_weekly_summary_sent='2026-03-26')
+            ) is False
+
+    def test_not_due_when_not_reminder_time(self):
+        svc = _svc()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(10, 0, '2026-03-29')
+            assert svc._is_weekly_summary_due(_user(reminder_time='09:00')) is False
+
+    def test_malformed_last_sent_returns_false(self):
+        svc = _svc()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-29')
+            assert svc._is_weekly_summary_due(
+                _user(last_weekly_summary_sent='not-a-date')
+            ) is False
+
+
+# ---------------------------------------------------------------------------
+# _send_weekly_summary + integration with _send_reminders
+# ---------------------------------------------------------------------------
+
+class TestSendWeeklySummary:
+    def _context(self) -> MagicMock:
+        ctx = MagicMock()
+        ctx.bot.send_message = MagicMock()
+        return ctx
+
+    def test_sends_when_enough_entries(self):
+        svc = _svc()
+        svc._journal_svc.get_weekly_entries.return_value = [
+            {'mood_score': 7, 'text': 'good'},
+            {'mood_score': 5, 'text': 'ok'},
+            {'mood_score': 3, 'text': 'rough'},
+        ]
+        svc._llm_svc.get_weekly_summary.return_value = 'A thoughtful week.'
+        ctx = self._context()
+        svc._send_weekly_summary(ctx, _user())
+        ctx.bot.send_message.assert_called_once()
+
+    def test_skips_when_too_few_entries(self):
+        svc = _svc()
+        svc._journal_svc.get_weekly_entries.return_value = [
+            {'mood_score': 5, 'text': 'entry'},
+            {'mood_score': 4, 'text': 'another'},
+        ]
+        ctx = self._context()
+        svc._send_weekly_summary(ctx, _user())
+        ctx.bot.send_message.assert_not_called()
+
+    def test_updates_last_weekly_summary_sent(self):
+        svc = _svc()
+        svc._journal_svc.get_weekly_entries.return_value = [
+            {'mood_score': i, 'text': 'e'} for i in range(3)
+        ]
+        svc._llm_svc.get_weekly_summary.return_value = 'Summary.'
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-29')
+            svc._send_weekly_summary(self._context(), _user())
+        svc._user_svc.create_or_update.assert_called_once_with(
+            1, last_weekly_summary_sent='2026-03-29'
+        )
+
+    def test_weekly_summary_sent_during_reminder_loop(self):
+        svc = _svc()
+        svc._user_svc.get_all_onboarded.return_value = [_user()]
+        svc._journal_svc.get_weekly_entries.return_value = [
+            {'mood_score': i + 3, 'text': 'e'} for i in range(3)
+        ]
+        svc._llm_svc.get_weekly_summary.return_value = 'Summary.'
+        ctx = self._context()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-29')
+            svc._send_reminders(ctx)
+        # daily reminder + weekly summary = 2 messages
+        assert ctx.bot.send_message.call_count == 2

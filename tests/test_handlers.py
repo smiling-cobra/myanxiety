@@ -10,16 +10,25 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from datetime import datetime
+
 from bot.handlers.journal import (
+    _mood_bar,
+    CHECK_IN_GUIDANCE_OFFER,
     CHECK_IN_MOOD,
     CHECK_IN_TEXT,
     MAIN_MENU,
     ONBOARDING_TIME,
     ONBOARDING_TIMEZONE,
+    handle_entry_text,
+    handle_guidance_offer,
     handle_mood,
     handle_reminder_time,
     handle_timezone,
     handle_timezone_location,
+    show_history,
+    show_stats,
+    show_weekly_summary,
 )
 
 
@@ -265,3 +274,285 @@ class TestHandleMood:
     def test_empty_string_is_rejected(self):
         result = handle_mood(_update(''), _context())
         assert result == CHECK_IN_MOOD
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — check-in error handling
+# ---------------------------------------------------------------------------
+
+class TestHandleEntryTextErrors:
+    def _ctx(self, mood_score: int = 7) -> MagicMock:
+        return _context({'name': 'Alice', 'mood_score': mood_score})
+
+    def test_db_error_returns_main_menu(self):
+        ctx = self._ctx()
+        with patch('bot.handlers.journal._journal_svc') as mock_svc, \
+             patch('bot.handlers.journal._llm_svc'):
+            mock_svc.save_entry.side_effect = Exception('DB down')
+            result = handle_entry_text(_update('feeling bad'), ctx)
+        assert result == MAIN_MENU
+
+    def test_db_error_sends_error_message(self):
+        ctx = self._ctx()
+        update = _update('feeling bad')
+        with patch('bot.handlers.journal._journal_svc') as mock_svc, \
+             patch('bot.handlers.journal._llm_svc'):
+            mock_svc.save_entry.side_effect = Exception('DB down')
+            handle_entry_text(update, ctx)
+        from messages.strings import ERROR_GENERIC
+        assert update.message.reply_text.call_args.args[0] == ERROR_GENERIC
+
+
+class TestShowHistory:
+    def test_empty_history_returns_main_menu(self):
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_recent_entries.return_value = []
+            result = show_history(_update(''), _context())
+        assert result == MAIN_MENU
+
+    def test_db_error_returns_main_menu(self):
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_recent_entries.side_effect = Exception('DB down')
+            result = show_history(_update(''), _context())
+        assert result == MAIN_MENU
+
+    def test_db_error_sends_error_message(self):
+        update = _update('')
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_recent_entries.side_effect = Exception('DB down')
+            show_history(update, _context())
+        from messages.strings import ERROR_GENERIC
+        assert update.message.reply_text.call_args.args[0] == ERROR_GENERIC
+
+
+class TestShowStats:
+    def test_no_entries_returns_main_menu(self):
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_stats.return_value = {'total': 0, 'streak': 0, 'avg_mood': 0}
+            mock_svc.get_recent_entries.return_value = []
+            result = show_stats(_update(''), _context())
+        assert result == MAIN_MENU
+
+    def test_db_error_returns_main_menu(self):
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_stats.side_effect = Exception('DB down')
+            result = show_stats(_update(''), _context())
+        assert result == MAIN_MENU
+
+    def test_db_error_sends_error_message(self):
+        update = _update('')
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_stats.side_effect = Exception('DB down')
+            show_stats(update, _context())
+        from messages.strings import ERROR_GENERIC
+        assert update.message.reply_text.call_args.args[0] == ERROR_GENERIC
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — mood bar helper
+# ---------------------------------------------------------------------------
+
+class TestMoodBar:
+    def test_score_0_all_empty(self):
+        assert _mood_bar(0) == '░░░░░░░░░░'
+
+    def test_score_10_all_filled(self):
+        assert _mood_bar(10) == '▓▓▓▓▓▓▓▓▓▓'
+
+    def test_score_5_half_filled(self):
+        assert _mood_bar(5) == '▓▓▓▓▓░░░░░'
+
+    def test_total_length_always_10(self):
+        for score in range(0, 11):
+            assert len(_mood_bar(score)) == 10
+
+    def test_clamps_below_zero(self):
+        assert _mood_bar(-1) == '░░░░░░░░░░'
+
+    def test_clamps_above_ten(self):
+        assert _mood_bar(11) == '▓▓▓▓▓▓▓▓▓▓'
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — weekly summary
+# ---------------------------------------------------------------------------
+
+def _entry(mood: int, days_ago: int = 0) -> dict:
+    return {
+        'mood_score': mood,
+        'text': 'entry text',
+        'tags': ['work', 'stress'],
+        'created_at': datetime(2026, 3, 29 - days_ago, 10, 0),
+    }
+
+
+class TestShowWeeklySummary:
+    def test_no_entries_returns_main_menu(self):
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_weekly_entries.return_value = []
+            result = show_weekly_summary(_update(''), _context())
+        assert result == MAIN_MENU
+
+    def test_no_entries_sends_empty_message(self):
+        update = _update('')
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_weekly_entries.return_value = []
+            show_weekly_summary(update, _context())
+        from messages.strings import WEEKLY_SUMMARY_EMPTY
+        assert update.message.reply_text.call_args.args[0] == WEEKLY_SUMMARY_EMPTY
+
+    def test_with_entries_returns_main_menu(self):
+        with patch('bot.handlers.journal._journal_svc') as mock_svc, \
+             patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_svc.get_weekly_entries.return_value = [_entry(7), _entry(5, 1), _entry(3, 2)]
+            mock_llm.get_weekly_summary.return_value = 'A good week overall.'
+            result = show_weekly_summary(_update(''), _context())
+        assert result == MAIN_MENU
+
+    def test_message_contains_mood_scores(self):
+        update = _update('')
+        with patch('bot.handlers.journal._journal_svc') as mock_svc, \
+             patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_svc.get_weekly_entries.return_value = [_entry(7), _entry(5, 1)]
+            mock_llm.get_weekly_summary.return_value = 'Summary.'
+            show_weekly_summary(update, _context())
+        text = update.message.reply_text.call_args.args[0]
+        assert '7' in text
+        assert '5' in text
+
+    def test_message_contains_mood_bar(self):
+        update = _update('')
+        with patch('bot.handlers.journal._journal_svc') as mock_svc, \
+             patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_svc.get_weekly_entries.return_value = [_entry(5)]
+            mock_llm.get_weekly_summary.return_value = 'Summary.'
+            show_weekly_summary(update, _context())
+        text = update.message.reply_text.call_args.args[0]
+        assert '▓' in text
+
+    def test_enough_entries_calls_llm_summary(self):
+        with patch('bot.handlers.journal._journal_svc') as mock_svc, \
+             patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_svc.get_weekly_entries.return_value = [_entry(7), _entry(5, 1), _entry(3, 2)]
+            mock_llm.get_weekly_summary.return_value = 'Summary.'
+            show_weekly_summary(_update(''), _context())
+        mock_llm.get_weekly_summary.assert_called_once()
+
+    def test_too_few_entries_skips_llm_summary(self):
+        update = _update('')
+        with patch('bot.handlers.journal._journal_svc') as mock_svc, \
+             patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_svc.get_weekly_entries.return_value = [_entry(5), _entry(4, 1)]
+            show_weekly_summary(update, _context())
+        mock_llm.get_weekly_summary.assert_not_called()
+        from messages.strings import WEEKLY_SUMMARY_TOO_FEW
+        assert WEEKLY_SUMMARY_TOO_FEW in update.message.reply_text.call_args.args[0]
+
+    def test_db_error_returns_main_menu(self):
+        with patch('bot.handlers.journal._journal_svc') as mock_svc:
+            mock_svc.get_weekly_entries.side_effect = Exception('DB down')
+            result = show_weekly_summary(_update(''), _context())
+        assert result == MAIN_MENU
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — guidance offer trigger
+# ---------------------------------------------------------------------------
+
+class TestHandleEntryTextGuidance:
+    def _run(self, mood_score: int) -> tuple:
+        ctx = _context({'name': 'Alice', 'mood_score': mood_score})
+        update = _update('I feel awful')
+        with patch('bot.handlers.journal._journal_svc') as mock_svc, \
+             patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': mood_score}
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'Hang in there.'
+            result = handle_entry_text(update, ctx)
+        return result, ctx
+
+    def test_score_5_returns_main_menu(self):
+        result, _ = self._run(5)
+        assert result == MAIN_MENU
+
+    def test_score_10_returns_main_menu(self):
+        result, _ = self._run(10)
+        assert result == MAIN_MENU
+
+    def test_score_4_triggers_guidance_offer(self):
+        result, _ = self._run(4)
+        assert result == CHECK_IN_GUIDANCE_OFFER
+
+    def test_score_3_triggers_guidance_offer(self):
+        result, _ = self._run(3)
+        assert result == CHECK_IN_GUIDANCE_OFFER
+
+    def test_score_1_triggers_guidance_offer(self):
+        result, _ = self._run(1)
+        assert result == CHECK_IN_GUIDANCE_OFFER
+
+    def test_low_mood_stores_entry_text(self):
+        _, ctx = self._run(3)
+        assert ctx.user_data.get('entry_text') == 'I feel awful'
+
+    def test_high_mood_does_not_store_entry_text(self):
+        _, ctx = self._run(7)
+        assert 'entry_text' not in ctx.user_data
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — guidance offer handler
+# ---------------------------------------------------------------------------
+
+class TestHandleGuidanceOffer:
+    def _ctx(self, mood_score: int = 3) -> MagicMock:
+        return _context({'mood_score': mood_score, 'entry_text': 'feeling rough', 'name': 'Alice'})
+
+    def test_yes_returns_main_menu(self):
+        from bot.keyboards import GUIDANCE_YES
+        with patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_llm.get_psychological_guidance.return_value = 'Try deep breathing.'
+            result = handle_guidance_offer(_update(GUIDANCE_YES), self._ctx())
+        assert result == MAIN_MENU
+
+    def test_yes_calls_llm(self):
+        from bot.keyboards import GUIDANCE_YES
+        with patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_llm.get_psychological_guidance.return_value = 'Try deep breathing.'
+            handle_guidance_offer(_update(GUIDANCE_YES), self._ctx())
+        mock_llm.get_psychological_guidance.assert_called_once_with(3, 'feeling rough')
+
+    def test_no_returns_main_menu(self):
+        from bot.keyboards import GUIDANCE_NO
+        result = handle_guidance_offer(_update(GUIDANCE_NO), self._ctx())
+        assert result == MAIN_MENU
+
+    def test_no_skips_llm(self):
+        from bot.keyboards import GUIDANCE_NO
+        with patch('bot.handlers.journal._llm_svc') as mock_llm:
+            handle_guidance_offer(_update(GUIDANCE_NO), self._ctx())
+        mock_llm.get_psychological_guidance.assert_not_called()
+
+    def test_any_other_text_treated_as_decline(self):
+        result = handle_guidance_offer(_update('random text'), self._ctx())
+        assert result == MAIN_MENU
+
+    def test_very_low_mood_appends_crisis_resources(self):
+        from bot.keyboards import GUIDANCE_YES
+        from messages.strings import GUIDANCE_CRISIS_RESOURCES
+        update = _update(GUIDANCE_YES)
+        with patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_llm.get_psychological_guidance.return_value = 'Try cold water.'
+            handle_guidance_offer(update, self._ctx(mood_score=2))
+        sent_text = update.message.reply_text.call_args.args[0]
+        assert GUIDANCE_CRISIS_RESOURCES in sent_text
+
+    def test_score_3_does_not_append_crisis_resources(self):
+        from bot.keyboards import GUIDANCE_YES
+        from messages.strings import GUIDANCE_CRISIS_RESOURCES
+        update = _update(GUIDANCE_YES)
+        with patch('bot.handlers.journal._llm_svc') as mock_llm:
+            mock_llm.get_psychological_guidance.return_value = 'Try deep breathing.'
+            handle_guidance_offer(update, self._ctx(mood_score=3))
+        sent_text = update.message.reply_text.call_args.args[0]
+        assert GUIDANCE_CRISIS_RESOURCES not in sent_text

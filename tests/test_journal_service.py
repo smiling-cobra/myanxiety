@@ -6,7 +6,7 @@ Streak rules under test:
   - Entry the next day     → streak + 1
   - Entry after a gap > 1d → streak resets to 1
 """
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -59,6 +59,39 @@ class TestStreakLogic:
         _save_on(svc, date(2026, 3, 10))  # gap → reset to 1
         _save_on(svc, date(2026, 3, 11))  # consecutive → 2
         assert svc.get_stats(USER)['streak'] == 2
+
+
+class TestWeeklyEntries:
+    def test_returns_entries_within_last_7_days(self, svc):
+        today = datetime.utcnow().date()
+        _save_on(svc, today)
+        _save_on(svc, today - timedelta(days=6))
+        entries = svc.get_weekly_entries(USER)
+        assert len(entries) == 2
+
+    def test_excludes_entries_older_than_7_days(self, svc):
+        today = datetime.utcnow().date()
+        _save_on(svc, today)
+        _save_on(svc, today - timedelta(days=8))
+        entries = svc.get_weekly_entries(USER)
+        assert len(entries) == 1
+
+    def test_returns_entries_in_ascending_order(self, svc):
+        today = datetime.utcnow().date()
+        _save_on(svc, today - timedelta(days=2), mood=3)
+        _save_on(svc, today, mood=7)
+        entries = svc.get_weekly_entries(USER)
+        assert entries[0]['mood_score'] == 3
+        assert entries[1]['mood_score'] == 7
+
+    def test_returns_empty_for_new_user(self, svc):
+        assert svc.get_weekly_entries(USER) == []
+
+    def test_is_user_scoped(self, svc):
+        other = 999999
+        today = datetime.utcnow().date()
+        _save_on(svc, today)
+        assert svc.get_weekly_entries(other) == []
 
 
 class TestStats:
