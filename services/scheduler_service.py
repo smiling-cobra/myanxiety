@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from messages.strings import REMINDER_MESSAGE, WEEKLY_SUMMARY_NOTIFICATION
@@ -92,7 +92,11 @@ class SchedulerService:
         if not last:
             return True
         from datetime import date as date_cls
-        return (today - date_cls.fromisoformat(last)).days >= 7
+        try:
+            return (today - date_cls.fromisoformat(last)).days >= 7
+        except ValueError:
+            logger.warning('Invalid last_weekly_summary_sent value %r for user %s', last, user.get('telegram_id'))
+            return False
 
     def _sent_today(self, user: dict) -> bool:
         last = user.get('last_reminder_sent')

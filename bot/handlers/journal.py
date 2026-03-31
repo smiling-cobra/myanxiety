@@ -57,6 +57,12 @@ from services.llm_service import LlmService
 from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
+
+_MD_SPECIAL = re.compile(r'([_*`\[])')
+
+
+def _escape_md(text: str) -> str:
+    return _MD_SPECIAL.sub(r'\\\1', text)
 _tf = TimezoneFinder()
 _ALL_TIMEZONES = sorted(available_timezones())
 
@@ -291,7 +297,7 @@ def show_stats(update: Update, context: CallbackContext) -> int:
         return MAIN_MENU
 
     all_tags = [tag for e in entries for tag in e.get('tags', [])]
-    top_tags = ', '.join(f'#{t}' for t, _ in Counter(all_tags).most_common(3)) or 'none yet'
+    top_tags = ', '.join(f'#{_escape_md(t)}' for t, _ in Counter(all_tags).most_common(3)) or 'none yet'
 
     update.message.reply_text(
         STATS_MESSAGE.format(
@@ -341,7 +347,7 @@ def show_weekly_summary(update: Update, context: CallbackContext) -> int:
         )
 
     all_tags = [tag for e in entries for tag in e.get('tags', [])]
-    top_tags = ', '.join(f'#{t}' for t, _ in Counter(all_tags).most_common(5)) or 'none yet'
+    top_tags = ', '.join(f'#{_escape_md(t)}' for t, _ in Counter(all_tags).most_common(5)) or 'none yet'
     body += WEEKLY_SUMMARY_TAGS.format(tags=top_tags)
 
     if len(entries) >= _MIN_ENTRIES_FOR_LLM_SUMMARY:
@@ -369,7 +375,7 @@ def handle_guidance_offer(update: Update, context: CallbackContext) -> int:
     if mood_score <= 2:
         guidance = guidance + '\n\n' + GUIDANCE_CRISIS_RESOURCES
 
-    update.message.reply_text(guidance, reply_markup=get_main_menu_keyboard(), parse_mode='Markdown')
+    update.message.reply_text(guidance, reply_markup=get_main_menu_keyboard())
     return MAIN_MENU
 
 

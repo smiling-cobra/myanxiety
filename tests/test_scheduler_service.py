@@ -277,6 +277,14 @@ class TestIsWeeklySummaryDue:
             mock_dt.now.side_effect = _fixed_now(10, 0, '2026-03-29')
             assert svc._is_weekly_summary_due(_user(reminder_time='09:00')) is False
 
+    def test_malformed_last_sent_returns_false(self):
+        svc = _svc()
+        with patch('services.scheduler_service.datetime') as mock_dt:
+            mock_dt.now.side_effect = _fixed_now(9, 0, '2026-03-29')
+            assert svc._is_weekly_summary_due(
+                _user(last_weekly_summary_sent='not-a-date')
+            ) is False
+
 
 # ---------------------------------------------------------------------------
 # _send_weekly_summary + integration with _send_reminders
