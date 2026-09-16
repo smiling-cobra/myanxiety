@@ -72,12 +72,17 @@ __all__ = [
 
 
 def register(application: Application) -> None:
+    # Commands that work from anywhere — before the first conversation, and in
+    # the middle of any state.
+    commands = [
+        CommandHandler('start', start),
+        CommandHandler('history', show_history),
+        CommandHandler('stats', show_stats),
+        CommandHandler('summary', show_weekly_summary),
+    ]
     handler = ConversationHandler(
         entry_points=[
-            CommandHandler('start', start),
-            CommandHandler('history', show_history),
-            CommandHandler('stats', show_stats),
-            CommandHandler('summary', show_weekly_summary),
+            *commands,
             # Last: only reached when nothing above matched and no conversation
             # is active, which is exactly the lost-state case.
             MessageHandler(filters.TEXT & ~filters.COMMAND, recover_state),
@@ -90,18 +95,22 @@ def register(application: Application) -> None:
             ],
             ONBOARDING_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reminder_time)],
             ONBOARDING_THERAPY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_therapy)],
-            MAIN_MENU: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_main_menu),
-                CommandHandler('history', show_history),
-                CommandHandler('stats', show_stats),
-                CommandHandler('summary', show_weekly_summary),
-            ],
+            MAIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_main_menu)],
             CHECK_IN_MOOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mood)],
             CHECK_IN_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_entry_text)],
             CHECK_IN_GUIDANCE_OFFER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_guidance_offer)],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        allow_reentry=True,
+        # Commands reach an active conversation through the fallbacks, which are
+        # consulted only after the current state's own handlers decline.
+        #
+        # They must not get there through `allow_reentry`. Re-entry checks the
+        # entry points *before* the state handlers, and `recover_state` matches
+        # any text — so with it on, every mood rating, journal entry and
+        # onboarding answer was routed to recovery instead of to the step that
+        # was waiting for it. tests/test_routing.py drives the real handler to
+        # keep it that way.
+        fallbacks=[*commands, CommandHandler('cancel', cancel)],
+        allow_reentry=False,
         # Survives a restart or a deploy. `name` is what the persistence layer
         # keys the stored states by, so changing it orphans live conversations.
         name='journal',
