@@ -19,6 +19,9 @@ In scope:
 - Recent history, streak stats, and weekly pattern summaries
 - Timezone-aware daily reminders and scheduled weekly insights
 - Optional low-mood coping guidance and crisis-resource escalation text
+- A user-requested export of recent entries, meant to be shared with a therapist
+- Flagging an entry to raise in a therapy session
+- Self-serve, permanent deletion of everything the bot stores about a user
 
 Out of scope:
 
@@ -36,7 +39,10 @@ Out of scope:
 - Check-In: The primary daily interaction where a user rates their mood and writes a journal entry.
 - Mood Score: An integer from 1 to 10 representing how the user feels at check-in time.
 - Journal Entry: A saved record containing user text, mood score, extracted tags, and creation time.
-- Tags: Short themes or triggers extracted from an entry to support pattern recognition.
+- Tags: Short themes or triggers extracted from an entry to support pattern recognition. Tags are normalised to a canonical form, so variants of one theme ("job", "work stress") count as one ("work").
+- Export: A Markdown file of the user's entries from the last 30 local days, sent to them in the chat. What happens to it next is the user's choice.
+- Session Flag: A marker on the latest entry meaning "raise this in my next therapy session". Flagged entries lead the export.
+- Account Deletion: Removal of every record linked to a user, across every store, confirmed by an explicit button press.
 - Local Day: The calendar day in the user's own timezone. Every day-based rule — streaks, weekly windows, date labels — is evaluated against this, never against the UTC day.
 - Streak: The count of consecutive local days with at least one check-in.
 - Weekly Summary: A reflection surface that combines the week's mood trend, top tags, and a short LLM-written synthesis.
@@ -93,12 +99,26 @@ Out of scope:
 - The user can view a weekly summary with mood trend rows and top recurring tags.
 - An LLM-written weekly synthesis is included only when the week has enough entries to support one.
 
-6. Scheduler workflow
+6. Export and flag workflow
+
+- The user requests an export at any time. It covers the last 30 local days, including every entry in full, and adds only counts, dates, mood scores and tags.
+- The export is built from stored data alone. No model writes any part of it.
+- After writing an entry, the user can flag it for their next session; flagging again removes the flag.
+
+7. Deletion workflow
+
+- The user requests deletion at any time. The bot explains what will be removed, suggests exporting first, and names what it cannot reach: the Telegram chat itself, and text already processed by Anthropic.
+- Only an explicit confirmation deletes. Any other reply cancels.
+- If deletion fails part-way, the user is told and can safely repeat it.
+- After deletion, nothing about the user remains, and a later message starts onboarding afresh.
+
+8. Scheduler workflow
 
 - A background job evaluates onboarded users on a repeating interval.
 - Daily reminders are sent in the user's timezone when the stored reminder time is due.
 - The system suppresses duplicate reminders on the same day.
 - Weekly summaries are sent no more often than every 7 days and only when the user has enough recent entries.
+- Delivery bookkeeping only updates an existing user. It never recreates a deleted one.
 
 ## Bounded Contexts and Code Ownership
 
@@ -121,6 +141,8 @@ Cross-context changes should preserve the domain vocabulary in this file.
 - Dates shown to a user are rendered in that user's timezone, so a label never disagrees with the day they lived through.
 - Average mood is derived from saved entries and rounded for display.
 - Conversation position and a narrow slice of session data — the user's name and the mood score of a check-in in progress — survive a restart or a deploy.
+- A tag that fails to extract is absent, never replaced by error text. Stored tags are always read through the current normalisation rules.
+- Every collection holding user-linked data is part of account deletion; adding a store means adding it there.
 - Raw journal text is never written outside the entries collection. It is deliberately excluded from persisted session data, which is allowlisted rather than filtered, so a newly added field is stored only when someone decides it should be.
 
 ## Domain Invariants

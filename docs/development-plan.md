@@ -113,6 +113,8 @@ The delete flow must enumerate every PII-bearing location, including any future 
 
 As of Phase 4 that list is: `users`, `entries`, `streaks`, `notifications`, `ptb_conversations`, `ptb_user_data`, `events`, and `usage`. `EventRepository.delete_for_user` and `UsageRepository.delete_for_user` already exist for the last two.
 
+_Status: complete. `services/account_service.py` holds the fan-out, and `tests/test_account_service.py` fails if a collection accessor in `db/db.py` is left out of it. `/export` ships as a Markdown document of the last 30 local days, and `/flag` marks the latest entry to raise in session._
+
 Optional adjacent feature: add a lightweight “flag for session” marker on entries if you want one small feature that directly improves the therapist-sharing workflow without expanding into clinician tooling.
 
 Primary anchors:
