@@ -5,7 +5,7 @@ all — waiting on a bot that has silently dropped their message.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram import Update
 
@@ -54,3 +54,36 @@ class TestErrorHandler:
         update = MagicMock(spec=Update)
         update.effective_message = None
         await handle_error(update, _context(RuntimeError('boom')))
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — instrumentation
+#
+# An uncaught exception is invisible in the product: the user simply stops
+# replying, which looks exactly like losing interest.
+# ---------------------------------------------------------------------------
+
+class TestErrorInstrumentation:
+    async def test_the_failure_is_recorded(self):
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            await handle_error(_update(), _context(ValueError('boom')))
+        assert analytics.track.call_args.args[0] == 'handler_error'
+
+    async def test_only_the_exception_type_is_recorded(self):
+        """An exception message can quote whatever the user typed."""
+        secret = 'my private journal entry'
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            await handle_error(_update(), _context(ValueError(secret)))
+        assert analytics.track.call_args.kwargs == {'error_type': 'ValueError'}
+
+    async def test_a_failure_with_no_update_behind_it_is_still_recorded(self):
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            await handle_error(object(), _context(RuntimeError('job failed')))
+        assert analytics.track.call_args.args[1] is None
+
+    async def test_the_user_is_still_answered(self):
+        """Instrumentation must never come at the cost of the reply."""
+        update = _update()
+        with patch('bot.handlers.journal.deps.analytics_svc'):
+            await handle_error(update, _context(ValueError('boom')))
+        assert update.effective_message.reply_text.call_args.args[0] == ERROR_GENERIC

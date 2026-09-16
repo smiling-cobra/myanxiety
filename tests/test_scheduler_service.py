@@ -52,6 +52,11 @@ def _svc() -> SchedulerService:
     svc._user_svc = MagicMock()
     svc._journal_svc = MagicMock()
     svc._llm_svc = MagicMock()
+    svc._analytics_svc = MagicMock()
+    # The default answer is "under budget": every test that is not about the
+    # ceiling should behave as if one does not exist.
+    svc._usage_svc = MagicMock()
+    svc._usage_svc.consume_llm.return_value = True
     svc._inflight = set()
     return svc
 
@@ -542,3 +547,118 @@ class TestJobQueueRequired:
 
         assert inspect.iscoroutinefunction(SchedulerService._tick)
         assert inspect.iscoroutinefunction(SchedulerService._run_job)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — instrumentation and the LLM spend ceiling
+#
+# Scheduled sends are the one path the user never initiates, so they are also
+# the one path nobody notices going wrong. The events are how it becomes
+# visible, and the ceiling is what stops a weekly summary billing a user who
+# already spent their day at the limit.
+# ---------------------------------------------------------------------------
+
+def _tracked(svc) -> dict:
+    return {c.args[0]: c.kwargs for c in svc._analytics_svc.track.call_args_list}
+
+
+class TestSchedulerInstrumentation:
+    async def test_a_delivered_reminder_is_recorded(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(_user(last_weekly_summary_check='2026-03-28'))
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        assert _tracked(svc)['reminder_sent']['day'] == '2026-03-28'
+
+    async def test_a_delivered_weekly_summary_is_recorded_with_its_size(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(_user(last_reminder_sent='2026-03-28'))
+        svc._journal_svc.get_weekly_entries.return_value = [{'mood_score': 5, 'text': 'x'}] * 4
+        svc._llm_svc.get_weekly_summary.return_value = 'A steady week.'
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        assert _tracked(svc)['weekly_summary_sent']['entry_count'] == 4
+
+    async def test_a_thin_week_is_recorded_as_skipped(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(_user(last_reminder_sent='2026-03-28'))
+        svc._journal_svc.get_weekly_entries.return_value = [{'mood_score': 5, 'text': 'x'}]
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        assert _tracked(svc)['weekly_summary_skipped']['reason'] == 'too_few_entries'
+
+    async def test_a_failed_send_records_no_success_event(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(_user(last_weekly_summary_check='2026-03-28'))
+        ctx = _context()
+        ctx.bot.send_message.side_effect = Exception('Telegram down')
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        assert 'reminder_sent' not in _tracked(svc)
+
+
+class TestWeeklySummaryAtTheCeiling:
+    def _svc_at_ceiling(self) -> SchedulerService:
+        svc = _svc()
+        svc._usage_svc.consume_llm.return_value = False
+        svc._user_svc = _FakeUserService(_user(last_reminder_sent='2026-03-28'))
+        svc._journal_svc.get_weekly_entries.return_value = [{'mood_score': 5, 'text': 'x'}] * 4
+        return svc
+
+    async def test_no_anthropic_call_is_made(self):
+        """The biggest single prompt the bot sends, and one nobody asked for."""
+        svc = self._svc_at_ceiling()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, _context())
+        svc._llm_svc.get_weekly_summary.assert_not_called()
+
+    async def test_nothing_is_sent(self):
+        svc = self._svc_at_ceiling()
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        ctx.bot.send_message.assert_not_called()
+
+    async def test_the_skip_is_recorded_with_its_reason(self):
+        svc = self._svc_at_ceiling()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, _context())
+        assert _tracked(svc)['weekly_summary_skipped']['reason'] == 'llm_budget'
+        assert _tracked(svc)['llm_budget_exceeded']['surface'] == 'weekly_summary_job'
+
+    async def test_todays_window_closes_so_the_scan_does_not_repeat(self):
+        svc = self._svc_at_ceiling()
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+            await _tick_and_deliver(svc, ctx)
+        assert svc._journal_svc.get_weekly_entries.call_count == 1
+
+    async def test_the_cadence_watermark_is_untouched_so_tomorrow_retries(self):
+        svc = self._svc_at_ceiling()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, _context())
+        stored = svc._user_svc.get_all_onboarded()[0]
+        assert stored['last_weekly_summary_check'] == '2026-03-28'
+        assert 'last_weekly_summary_sent' not in stored
+
+    async def test_the_budget_is_charged_against_the_users_own_timezone(self):
+        """The scheduler holds the timezone already, so it passes it rather than
+        letting the service look it up to a different answer."""
+        svc = self._svc_at_ceiling()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, _context())
+        assert svc._usage_svc.consume_llm.call_args.args == (1, 1, 'Europe/London')
+
+    async def test_the_reminder_is_unaffected(self):
+        """Reminders cost nothing, so the ceiling must not silence them."""
+        svc = _svc()
+        svc._usage_svc.consume_llm.return_value = False
+        svc._user_svc = _FakeUserService(_user(last_weekly_summary_check='2026-03-28'))
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        ctx.bot.send_message.assert_called_once()

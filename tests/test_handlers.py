@@ -16,12 +16,14 @@ from bot.handlers.journal import (
     CHECK_IN_TEXT,
     MAIN_MENU,
     ONBOARDING_NAME,
+    ONBOARDING_THERAPY,
     ONBOARDING_TIME,
     ONBOARDING_TIMEZONE,
     handle_entry_text,
     handle_guidance_offer,
     handle_mood,
     handle_reminder_time,
+    handle_therapy,
     handle_timezone,
     handle_timezone_location,
     recover_state,
@@ -189,10 +191,10 @@ class TestHandleReminderTime:
     def _ctx(self) -> MagicMock:
         return _context({'name': 'Alice', 'timezone': 'Europe/London'})
 
-    async def test_valid_time_advances_to_main_menu(self):
+    async def test_valid_time_advances_to_the_cohort_question(self):
         with patch('bot.handlers.journal.deps.user_svc'):
             result = await handle_reminder_time(_update('09:00'), self._ctx())
-        assert result == MAIN_MENU
+        assert result == ONBOARDING_THERAPY
 
     async def test_valid_time_saves_user(self):
         with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
@@ -218,12 +220,18 @@ class TestHandleReminderTime:
     async def test_boundary_midnight(self):
         with patch('bot.handlers.journal.deps.user_svc'):
             result = await handle_reminder_time(_update('00:00'), self._ctx())
-        assert result == MAIN_MENU
+        assert result == ONBOARDING_THERAPY
 
     async def test_boundary_last_minute_of_day(self):
         with patch('bot.handlers.journal.deps.user_svc'):
             result = await handle_reminder_time(_update('23:59'), self._ctx())
-        assert result == MAIN_MENU
+        assert result == ONBOARDING_THERAPY
+
+    async def test_account_is_onboarded_before_the_optional_question(self):
+        """Abandoning the cohort question must not leave a half-created account."""
+        with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            await handle_reminder_time(_update('09:00'), self._ctx())
+        assert mock_svc.create_or_update.call_args.kwargs['onboarded'] is True
 
 
 # ---------------------------------------------------------------------------
@@ -849,3 +857,578 @@ class TestDepsAreReachedByAttribute:
             src = path.read_text()
             assert 'from .deps import' not in src, path
             assert 'from bot.handlers.journal.deps import' not in src, path
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — content-triggered crisis detection
+#
+# The mood threshold only ever saw the number. These cover the case it always
+# missed: an unremarkable rating attached to alarming text.
+# ---------------------------------------------------------------------------
+
+class TestContentTriggeredCrisis:
+    def _sent(self, update) -> list:
+        return [c.args[0] for c in update.message.reply_text.call_args_list]
+
+    async def _run(self, mood_score: int, text: str) -> tuple:
+        ctx = _context({'name': 'Alice', 'mood_score': mood_score})
+        update = _update(text)
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': mood_score}
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'Hang in there.'
+            result = await handle_entry_text(update, ctx)
+        return result, update, ctx
+
+    async def test_high_mood_with_crisis_text_receives_resources(self):
+        _, update, _ = await self._run(8, 'Good day overall but I still want to kill myself')
+        assert GUIDANCE_CRISIS_RESOURCES in self._sent(update)
+
+    async def test_mid_mood_with_crisis_text_receives_resources(self):
+        _, update, _ = await self._run(6, "I can't go on like this")
+        assert GUIDANCE_CRISIS_RESOURCES in self._sent(update)
+
+    async def test_high_mood_with_ordinary_text_does_not(self):
+        _, update, _ = await self._run(8, 'Work was busy but fine')
+        assert GUIDANCE_CRISIS_RESOURCES not in self._sent(update)
+
+    async def test_resources_come_before_anything_that_can_fail(self):
+        _, update, _ = await self._run(9, 'I want to die')
+        assert self._sent(update)[0] == GUIDANCE_CRISIS_RESOURCES
+
+    async def test_shown_once_when_both_triggers_fire(self):
+        """A low rating *and* matching text is one situation, not two messages."""
+        _, update, _ = await self._run(1, 'I want to kill myself')
+        assert self._sent(update).count(GUIDANCE_CRISIS_RESOURCES) == 1
+
+    async def test_crisis_text_opens_the_guidance_offer_at_any_rating(self):
+        result, _, _ = await self._run(9, 'I want to die')
+        assert result == CHECK_IN_GUIDANCE_OFFER
+
+    async def test_crisis_text_marks_the_check_in_acute(self):
+        """Drives the grounding technique set rather than behavioural activation."""
+        _, _, ctx = await self._run(9, 'I want to die')
+        assert ctx.user_data['acute'] is True
+
+    async def test_a_low_rating_alone_is_not_acute(self):
+        _, _, ctx = await self._run(4, 'Rough day at work')
+        assert ctx.user_data['acute'] is False
+
+    async def test_the_entry_is_still_saved(self):
+        """Detection changes what is shown, never whether the entry is kept."""
+        ctx = _context({'name': 'Alice', 'mood_score': 9})
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 9}
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'ok'
+            await handle_entry_text(_update('I want to die'), ctx)
+        mock_svc.save_entry.assert_called_once()
+
+    async def test_detection_never_calls_the_llm(self):
+        """The gate is deterministic — an Anthropic outage must not open it."""
+        with patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_llm.extract_tags.side_effect = Exception('Anthropic down')
+            update = _update('I want to kill myself')
+            with patch('bot.handlers.journal.deps.journal_svc'):
+                await handle_entry_text(update, _context({'name': 'A', 'mood_score': 7}))
+        assert GUIDANCE_CRISIS_RESOURCES in self._sent(update)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — cohort capture
+#
+# Neither field can be reconstructed later, which is why they ship now.
+# ---------------------------------------------------------------------------
+
+class TestAcquisitionSource:
+    async def _start_with(self, args, existing=None) -> MagicMock:
+        ctx = _context()
+        ctx.args = args
+        with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            mock_svc.get.return_value = existing
+            await start(_update('/start'), ctx)
+        return mock_svc
+
+    async def test_a_deep_link_payload_is_recorded(self):
+        mock_svc = await self._start_with(['reddit'])
+        assert mock_svc.create_or_update.call_args.kwargs == {'acquisition_source': 'reddit'}
+
+    async def test_no_payload_is_recorded_as_direct(self):
+        mock_svc = await self._start_with([])
+        assert mock_svc.create_or_update.call_args.kwargs == {'acquisition_source': 'direct'}
+
+    async def test_the_payload_is_lowercased(self):
+        mock_svc = await self._start_with(['Reddit'])
+        assert mock_svc.create_or_update.call_args.kwargs == {'acquisition_source': 'reddit'}
+
+    async def test_a_payload_that_is_not_a_plain_slug_is_discarded(self):
+        """The payload is part of a URL anyone can craft, so it is untrusted."""
+        mock_svc = await self._start_with(['<script>alert(1)</script>'])
+        assert mock_svc.create_or_update.call_args.kwargs == {'acquisition_source': 'direct'}
+
+    async def test_an_over_long_payload_is_discarded(self):
+        mock_svc = await self._start_with(['x' * 64])
+        assert mock_svc.create_or_update.call_args.kwargs == {'acquisition_source': 'direct'}
+
+    async def test_first_touch_wins(self):
+        """A returning pre-onboarding user keeps the source that first brought them."""
+        mock_svc = await self._start_with(['twitter'], existing={'acquisition_source': 'reddit'})
+        mock_svc.create_or_update.assert_not_called()
+
+    async def test_an_onboarded_user_is_not_re_attributed(self):
+        mock_svc = await self._start_with(['twitter'], existing={'name': 'A', 'onboarded': True})
+        mock_svc.create_or_update.assert_not_called()
+
+
+class TestTherapyCohortQuestion:
+    async def _answer(self, text: str) -> MagicMock:
+        with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            mock_svc.get.return_value = {
+                'name': 'Alice', 'timezone': 'Europe/London', 'reminder_time': '09:00'
+            }
+            state = await handle_therapy(_update(text), _context({'name': 'Alice'}))
+        return mock_svc, state
+
+    async def test_yes_is_recorded(self):
+        mock_svc, _ = await self._answer('Yes')
+        assert mock_svc.create_or_update.call_args.kwargs == {'in_therapy': 'yes'}
+
+    async def test_no_is_recorded(self):
+        mock_svc, _ = await self._answer('No')
+        assert mock_svc.create_or_update.call_args.kwargs == {'in_therapy': 'no'}
+
+    async def test_declining_to_answer_is_its_own_value(self):
+        """Distinct from never having been asked — a different cohort."""
+        mock_svc, _ = await self._answer('Prefer not to say')
+        assert mock_svc.create_or_update.call_args.kwargs == {'in_therapy': 'undisclosed'}
+
+    async def test_unrecognised_text_is_treated_as_undisclosed(self):
+        mock_svc, _ = await self._answer('why do you ask')
+        assert mock_svc.create_or_update.call_args.kwargs == {'in_therapy': 'undisclosed'}
+
+    async def test_any_answer_completes_onboarding(self):
+        """The question is optional and last; it must never trap anyone."""
+        for text in ('Yes', 'No', 'Prefer not to say', 'something else entirely'):
+            _, state = await self._answer(text)
+            assert state == MAIN_MENU
+
+    async def test_the_closing_message_is_built_from_the_stored_account(self):
+        """`timezone` and `reminder_time` are not on the persistence allowlist,
+        so the confirmation is read back rather than trusted to user_data."""
+        update = _update('Yes')
+        with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            mock_svc.get.return_value = {
+                'name': 'Alice', 'timezone': 'Europe/London', 'reminder_time': '21:30'
+            }
+            await handle_therapy(update, _context())
+        assert '21:30' in update.message.reply_text.call_args.args[0]
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — LLM spend ceiling
+#
+# Every surface degrades rather than refusing. The thing the user wrote is
+# never what gets dropped.
+# ---------------------------------------------------------------------------
+
+def _exhausted():
+    """A budget that refuses every reservation."""
+    return patch('bot.handlers.journal.deps.usage_svc.consume_llm', return_value=False)
+
+
+class TestCheckInAtTheCeiling:
+    async def _run(self, text: str = 'A quiet day') -> tuple:
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        update = _update(text)
+        with _exhausted(), \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 4, 'total': 9, 'avg_mood': 6}
+            result = await handle_entry_text(update, ctx)
+        return result, update, mock_svc, mock_llm
+
+    async def test_the_entry_is_still_saved(self):
+        _, _, mock_svc, _ = await self._run()
+        mock_svc.save_entry.assert_called_once()
+
+    async def test_no_anthropic_call_is_made(self):
+        _, _, _, mock_llm = await self._run()
+        mock_llm.extract_tags.assert_not_called()
+        mock_llm.get_empathetic_response.assert_not_called()
+
+    async def test_the_entry_is_saved_without_tags(self):
+        _, _, mock_svc, _ = await self._run()
+        assert mock_svc.save_entry.call_args.args[3] == []
+
+    async def test_the_user_is_told_rather_than_left_wondering(self):
+        _, update, _, _ = await self._run()
+        assert 'limit' in update.message.reply_text.call_args.args[0]
+
+    async def test_the_streak_is_still_reported(self):
+        _, update, _, _ = await self._run()
+        assert '4 day(s)' in update.message.reply_text.call_args.args[0]
+
+    async def test_the_conversation_still_ends_on_the_main_menu(self):
+        result, _, _, _ = await self._run()
+        assert result == MAIN_MENU
+
+    async def test_crisis_resources_are_unaffected(self):
+        """The safety path costs nothing, so a budget cannot close it."""
+        ctx = _context({'name': 'Alice', 'mood_score': 1})
+        update = _update('I want to die')
+        with _exhausted(), \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 1}
+            await handle_entry_text(update, ctx)
+        sent = [c.args[0] for c in update.message.reply_text.call_args_list]
+        assert GUIDANCE_CRISIS_RESOURCES in sent
+
+
+class TestGuidanceAtTheCeiling:
+    async def _run(self) -> MagicMock:
+        from bot.keyboards import GUIDANCE_YES
+        ctx = _context({'name': 'Alice', 'mood_score': 2, 'entry_text': 'awful', 'acute': True})
+        update = _update(GUIDANCE_YES)
+        with _exhausted(), patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            await handle_guidance_offer(update, ctx)
+            self.mock_llm = mock_llm
+        return update
+
+    async def test_a_real_exercise_is_sent_not_an_apology(self):
+        """This user just asked for help; "try again later" is the wrong answer."""
+        from messages.strings import GUIDANCE_STATIC_FALLBACK
+        update = await self._run()
+        assert update.message.reply_text.call_args.args[0] == GUIDANCE_STATIC_FALLBACK
+
+    async def test_no_anthropic_call_is_made(self):
+        await self._run()
+        self.mock_llm.get_psychological_guidance.assert_not_called()
+
+
+class TestWeeklySummaryAtTheCeiling:
+    async def _run(self) -> MagicMock:
+        _set_user_timezone('Europe/London')
+        update = _update('')
+        entries = [
+            {'created_at': datetime(2026, 3, 24, 9, 0), 'mood_score': 5, 'text': 'a', 'tags': ['work']},
+            {'created_at': datetime(2026, 3, 25, 9, 0), 'mood_score': 6, 'text': 'b', 'tags': ['work']},
+            {'created_at': datetime(2026, 3, 26, 9, 0), 'mood_score': 7, 'text': 'c', 'tags': []},
+        ]
+        with _exhausted(), \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_weekly_entries.return_value = entries
+            await show_weekly_summary(update, _context())
+            self.mock_llm = mock_llm
+        return update
+
+    async def test_the_trend_still_renders(self):
+        """Everything above the LLM paragraph is computed locally and free."""
+        update = await self._run()
+        assert '7/10' in update.message.reply_text.call_args.args[0].replace('*', '')
+
+    async def test_the_tags_still_render(self):
+        update = await self._run()
+        assert '#work' in update.message.reply_text.call_args.args[0]
+
+    async def test_the_pattern_paragraph_is_replaced_with_an_explanation(self):
+        update = await self._run()
+        assert 'paused until tomorrow' in update.message.reply_text.call_args.args[0]
+
+    async def test_no_anthropic_call_is_made(self):
+        await self._run()
+        self.mock_llm.get_weekly_summary.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — instrumentation
+#
+# Asserted at the boundary: the events must reach the analytics service with
+# the props that make them answerable, and never with the entry text.
+# ---------------------------------------------------------------------------
+
+class TestInstrumentation:
+    @staticmethod
+    def _tracked(mock_analytics) -> dict:
+        """Every recorded event, keyed by name, with its props."""
+        return {c.args[0]: c.kwargs for c in mock_analytics.track.call_args_list}
+
+    async def test_a_completed_check_in_is_recorded(self):
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 3, 'total': 5, 'avg_mood': 6}
+            mock_llm.extract_tags.return_value = ['work']
+            mock_llm.get_empathetic_response.return_value = 'ok'
+            await handle_entry_text(_update('A long-ish day at the office'), ctx)
+        props = self._tracked(analytics)['check_in_completed']
+        assert props['mood_score'] == 6
+        assert props['streak'] == 3
+        assert props['tag_count'] == 1
+        assert props['llm'] is True
+
+    async def test_a_check_in_event_carries_a_length_not_the_text(self):
+        """The single most important property of this event stream."""
+        entry = 'Something private that must not be copied into a second store'
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 6}
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'ok'
+            await handle_entry_text(_update(entry), ctx)
+        props = self._tracked(analytics)['check_in_completed']
+        assert props['text_length'] == len(entry)
+        assert entry not in str(props)
+
+    async def test_a_failed_check_in_is_recorded(self):
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            mock_svc.save_entry.side_effect = Exception('DB down')
+            await handle_entry_text(_update('a day'), ctx)
+        assert 'check_in_failed' in self._tracked(analytics)
+
+    async def test_crisis_delivery_records_its_trigger_and_categories(self):
+        """The only way the lexicon's false-positive rate ever becomes knowable."""
+        ctx = _context({'name': 'Alice', 'mood_score': 8})
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 8}
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'ok'
+            await handle_entry_text(_update('I want to kill myself'), ctx)
+        props = self._tracked(analytics)['crisis_resources_shown']
+        assert props['triggers'] == ['content']
+        assert props['categories'] == ['suicidal_intent']
+
+    async def test_both_triggers_are_distinguishable(self):
+        ctx = _context({'name': 'Alice', 'mood_score': 1})
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 1}
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'ok'
+            await handle_entry_text(_update('I want to die'), ctx)
+        assert self._tracked(analytics)['crisis_resources_shown']['triggers'] == ['mood', 'content']
+
+    async def test_guidance_uptake_is_recorded(self):
+        from bot.keyboards import GUIDANCE_YES
+        ctx = _context({'name': 'Alice', 'mood_score': 2, 'entry_text': 'x'})
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            await handle_guidance_offer(_update(GUIDANCE_YES), ctx)
+        assert 'guidance_accepted' in self._tracked(analytics)
+
+    async def test_declining_guidance_is_recorded(self):
+        ctx = _context({'name': 'Alice', 'mood_score': 2, 'entry_text': 'x'})
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            await handle_guidance_offer(_update('No thanks'), ctx)
+        assert 'guidance_declined' in self._tracked(analytics)
+
+    async def test_onboarding_start_records_the_source(self):
+        ctx = _context()
+        ctx.args = ['reddit']
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            mock_svc.get.return_value = None
+            await start(_update('/start'), ctx)
+        assert self._tracked(analytics)['onboarding_started']['source'] == 'reddit'
+
+    async def test_onboarding_completion_is_recorded(self):
+        ctx = _context({'name': 'Alice', 'timezone': 'Europe/London'})
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.user_svc'):
+            await handle_reminder_time(_update('09:00'), ctx)
+        assert 'onboarding_completed' in self._tracked(analytics)
+
+    async def test_the_cohort_answer_is_recorded(self):
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            mock_svc.get.return_value = {'name': 'A', 'timezone': 'UTC', 'reminder_time': '09:00'}
+            await handle_therapy(_update('Yes'), _context())
+        assert self._tracked(analytics)['cohort_recorded']['in_therapy'] == 'yes'
+
+    async def test_hitting_the_ceiling_is_recorded_with_its_surface(self):
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with _exhausted(), \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 6}
+            await handle_entry_text(_update('a day'), ctx)
+        assert self._tracked(analytics)['llm_budget_exceeded']['surface'] == 'check_in'
+
+    async def test_read_surfaces_are_recorded(self):
+        _set_user_timezone('Europe/London')
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc:
+            mock_svc.get_recent_entries.return_value = [
+                {'created_at': datetime(2026, 3, 26, 9, 0), 'mood_score': 5, 'text': 'a', 'tags': []}
+            ]
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 5}
+            await show_history(_update(''), _context())
+            await show_stats(_update(''), _context())
+        tracked = self._tracked(analytics)
+        assert 'history_viewed' in tracked
+        assert 'stats_viewed' in tracked
+
+    async def test_an_empty_read_surface_is_still_recorded(self):
+        """Someone who opens their history and finds nothing is the most
+        interesting reader of it — and the easiest one to never record."""
+        _set_user_timezone('Europe/London')
+        with patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc:
+            mock_svc.get_recent_entries.return_value = []
+            mock_svc.get_stats.return_value = {'streak': 0, 'total': 0, 'avg_mood': 0}
+            mock_svc.get_weekly_entries.return_value = []
+            await show_history(_update(''), _context())
+            await show_stats(_update(''), _context())
+            await show_weekly_summary(_update(''), _context())
+        tracked = self._tracked(analytics)
+        assert tracked['history_viewed']['count'] == 0
+        assert tracked['stats_viewed']['total'] == 0
+        assert tracked['weekly_summary_viewed']['entry_count'] == 0
+
+
+# ---------------------------------------------------------------------------
+# Metering outages
+# ---------------------------------------------------------------------------
+
+def _metering_down():
+    """A usage repository that cannot be reached.
+
+    Patched at the repository rather than at `consume_llm`, so the real
+    `UsageService` sits in the path and these tests prove the whole chain
+    degrades — not just that the handlers cope with a `False` someone handed
+    them.
+    """
+    return patch(
+        'repositories.usage_repo.UsageRepository.increment',
+        side_effect=RuntimeError('mongo is down'),
+    )
+
+
+class TestCheckInWhenMeteringIsDown:
+    async def _run(self, text: str = 'A quiet day') -> tuple:
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        update = _update(text)
+        with _metering_down(), \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_svc.get_stats.return_value = {'streak': 4, 'total': 9, 'avg_mood': 6}
+            result = await handle_entry_text(update, ctx)
+        return result, update, mock_svc, mock_llm
+
+    async def test_the_entry_is_still_saved(self):
+        """The failure is in the meter, not in the thing the user came to do."""
+        _, _, mock_svc, _ = await self._run()
+        mock_svc.save_entry.assert_called_once()
+
+    async def test_no_anthropic_call_is_made(self):
+        """Fail closed on spend: unmetered calls are not made."""
+        _, _, _, mock_llm = await self._run()
+        mock_llm.extract_tags.assert_not_called()
+        mock_llm.get_empathetic_response.assert_not_called()
+
+    async def test_the_user_reaches_the_main_menu(self):
+        result, _, _, _ = await self._run()
+        assert result == MAIN_MENU
+
+    async def test_crisis_resources_still_reach_a_user_who_needs_them(self):
+        """Nothing about a broken counter may stand between this text and the numbers."""
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        update = _update('I want to die')
+        with _metering_down(), \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 6}
+            await handle_entry_text(update, ctx)
+        assert GUIDANCE_CRISIS_RESOURCES in [c.args[0] for c in update.message.reply_text.call_args_list]
+
+
+class TestGuidanceWhenMeteringIsDown:
+    async def test_a_real_exercise_is_sent_not_an_apology(self):
+        """This user tapped "yes, help me". A metering outage is not their problem."""
+        from bot.keyboards import GUIDANCE_YES
+        from messages.strings import GUIDANCE_STATIC_FALLBACK
+        ctx = _context({'name': 'Alice', 'mood_score': 2, 'entry_text': 'awful', 'acute': True})
+        update = _update(GUIDANCE_YES)
+        with _metering_down(), patch('bot.handlers.journal.deps.llm_svc'):
+            await handle_guidance_offer(update, ctx)
+        assert update.message.reply_text.call_args.args[0] == GUIDANCE_STATIC_FALLBACK
+
+
+class TestWeeklySummaryWhenMeteringIsDown:
+    async def test_the_locally_computed_trend_still_renders(self):
+        """Only the closing paragraph costs a call; the rows above it are free."""
+        _set_user_timezone('Europe/London')
+        update = _update('')
+        entries = [
+            {'created_at': datetime(2026, 3, 24, 9, 0), 'mood_score': 5, 'text': 'a', 'tags': ['work']},
+            {'created_at': datetime(2026, 3, 25, 9, 0), 'mood_score': 6, 'text': 'b', 'tags': ['work']},
+            {'created_at': datetime(2026, 3, 26, 9, 0), 'mood_score': 7, 'text': 'c', 'tags': []},
+        ]
+        with _metering_down(), \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            mock_svc.get_weekly_entries.return_value = entries
+            await show_weekly_summary(update, _context())
+        body = update.message.reply_text.call_args.args[0]
+        assert '#work' in body
+        assert mood_bar(7) in body
+
+
+class TestFailedCheckInRefundsTheUnspentCall:
+    """Two calls are reserved, and the save sits between them.
+
+    A database failure means the reply was never requested, so charging for it
+    walks a user toward a ceiling on work that never reached Anthropic. The tag
+    call is not refunded — by that point it has been made.
+    """
+
+    async def _run_failing_check_in(self) -> MagicMock:
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            usage.consume_llm.return_value = True
+            mock_svc.save_entry.side_effect = RuntimeError('mongo is down')
+            await handle_entry_text(_update('A quiet day'), ctx)
+        return usage
+
+    async def test_exactly_one_call_is_handed_back(self):
+        usage = await self._run_failing_check_in()
+        usage.refund.assert_called_once()
+        assert usage.refund.call_args.args[1] == 1
+
+    async def test_nothing_is_refunded_when_nothing_was_reserved(self):
+        """A user already at the ceiling spent nothing, so there is nothing to return."""
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            usage.consume_llm.return_value = False
+            mock_svc.save_entry.side_effect = RuntimeError('mongo is down')
+            await handle_entry_text(_update('A quiet day'), ctx)
+        usage.refund.assert_not_called()
+
+    async def test_a_successful_check_in_refunds_nothing(self):
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            usage.consume_llm.return_value = True
+            mock_llm.extract_tags.return_value = ['work']
+            mock_llm.get_empathetic_response.return_value = 'That sounds hard.'
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 6}
+            await handle_entry_text(_update('A quiet day'), ctx)
+        usage.refund.assert_not_called()

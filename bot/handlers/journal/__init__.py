@@ -14,7 +14,7 @@ machine and `register()`. Each responsibility lives in its own submodule:
     deps.py         service singletons — reach them as `deps.llm_svc`, etc.
     errors.py       @service_errors, the shared "fall back to main menu" decorator
     timezones.py    IANA timezone lookup (exact, fuzzy, and by coordinate)
-    onboarding.py   name, timezone, reminder-time setup
+    onboarding.py   name, timezone, reminder-time setup, cohort question
     menu.py         the main-menu router, /cancel, and lost-state recovery
     checkin.py      mood rating, entry text, LLM response, guidance offer
     views.py        history, stats, weekly summary
@@ -26,6 +26,7 @@ from bot.handlers.journal.menu import cancel, handle_main_menu, recover_state
 from bot.handlers.journal.onboarding import (
     handle_name,
     handle_reminder_time,
+    handle_therapy,
     handle_timezone,
     handle_timezone_location,
     start,
@@ -36,6 +37,7 @@ from bot.handlers.journal.states import (
     CHECK_IN_TEXT,
     MAIN_MENU,
     ONBOARDING_NAME,
+    ONBOARDING_THERAPY,
     ONBOARDING_TIME,
     ONBOARDING_TIMEZONE,
 )
@@ -45,6 +47,7 @@ __all__ = [
     'ONBOARDING_NAME',
     'ONBOARDING_TIMEZONE',
     'ONBOARDING_TIME',
+    'ONBOARDING_THERAPY',
     'MAIN_MENU',
     'CHECK_IN_MOOD',
     'CHECK_IN_TEXT',
@@ -54,6 +57,7 @@ __all__ = [
     'handle_timezone',
     'handle_timezone_location',
     'handle_reminder_time',
+    'handle_therapy',
     'handle_main_menu',
     'handle_mood',
     'handle_entry_text',
@@ -85,6 +89,7 @@ def register(application: Application) -> None:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_timezone),
             ],
             ONBOARDING_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reminder_time)],
+            ONBOARDING_THERAPY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_therapy)],
             MAIN_MENU: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_main_menu),
                 CommandHandler('history', show_history),

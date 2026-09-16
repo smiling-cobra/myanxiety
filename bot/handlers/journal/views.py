@@ -26,9 +26,11 @@ from messages.strings import (
     WEEKLY_SUMMARY_HEADER,
     WEEKLY_SUMMARY_LLM_INTRO,
     WEEKLY_SUMMARY_TAGS,
+    WEEKLY_SUMMARY_BUDGET_REACHED,
     WEEKLY_SUMMARY_TOO_FEW,
     WEEKLY_SUMMARY_TREND_ROW,
 )
+from services import analytics_service as analytics
 from services.journal_service import MIN_ENTRIES_FOR_WEEKLY_SUMMARY
 from services.time_utils import resolve_timezone, to_local
 
@@ -51,6 +53,13 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     entries = await asyncio.to_thread(deps.journal_svc.get_recent_entries, telegram_id)
     _, tz = await _user_timezone(telegram_id)
 
+    # Tracked before the empty-state return: someone who opens their history and
+    # finds nothing is the most interesting reader of it, and an event that only
+    # fires when there is something to show would never record them.
+    await asyncio.to_thread(
+        deps.analytics_svc.track, analytics.HISTORY_VIEWED, telegram_id, count=len(entries)
+    )
+
     if not entries:
         await update.message.reply_text(
             HISTORY_EMPTY, parse_mode='Markdown', reply_markup=get_main_menu_keyboard()
@@ -71,6 +80,14 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     telegram_id = update.effective_user.id
     stats = await asyncio.to_thread(deps.journal_svc.get_stats, telegram_id)
     entries = await asyncio.to_thread(deps.journal_svc.get_recent_entries, telegram_id, 7)
+
+    await asyncio.to_thread(
+        deps.analytics_svc.track,
+        analytics.STATS_VIEWED,
+        telegram_id,
+        total=stats['total'],
+        streak=stats['streak'],
+    )
 
     if stats['total'] == 0:
         await update.message.reply_text(STATS_EMPTY, reply_markup=get_main_menu_keyboard())
@@ -97,6 +114,9 @@ async def show_weekly_summary(update: Update, context: ContextTypes.DEFAULT_TYPE
     telegram_id = update.effective_user.id
     name, tz = await _user_timezone(telegram_id)
     entries = await asyncio.to_thread(deps.journal_svc.get_weekly_entries, telegram_id, name)
+    await asyncio.to_thread(
+        deps.analytics_svc.track, analytics.WEEKLY_SUMMARY_VIEWED, telegram_id, entry_count=len(entries)
+    )
 
     if not entries:
         await update.message.reply_text(
@@ -119,11 +139,31 @@ async def show_weekly_summary(update: Update, context: ContextTypes.DEFAULT_TYPE
     top_tags = ', '.join(f'#{escape_md(t)}' for t, _ in Counter(all_tags).most_common(5)) or 'none yet'
     body += WEEKLY_SUMMARY_TAGS.format(tags=top_tags)
 
-    if len(entries) >= MIN_ENTRIES_FOR_WEEKLY_SUMMARY:
-        body += WEEKLY_SUMMARY_LLM_INTRO
-        body += escape_md(await asyncio.to_thread(deps.llm_svc.get_weekly_summary, entries))
-    else:
-        body += WEEKLY_SUMMARY_TOO_FEW
+    body += await _pattern_paragraph(telegram_id, name, entries)
 
     await update.message.reply_text(body, parse_mode='Markdown', reply_markup=get_main_menu_keyboard())
     return MAIN_MENU
+
+
+async def _pattern_paragraph(telegram_id: int, timezone_name: str | None, entries: list) -> str:
+    """The LLM tail of the weekly summary, or an explanation of its absence.
+
+    The trend rows and tag counts above it are computed locally and always
+    render. Only this paragraph costs an Anthropic call, so it is the only part
+    a thin week or an exhausted budget can remove — the user still gets their
+    week either way.
+    """
+    if len(entries) < MIN_ENTRIES_FOR_WEEKLY_SUMMARY:
+        return WEEKLY_SUMMARY_TOO_FEW
+
+    if not await asyncio.to_thread(deps.usage_svc.consume_llm, telegram_id, 1, timezone_name):
+        await asyncio.to_thread(
+            deps.analytics_svc.track,
+            analytics.LLM_BUDGET_EXCEEDED,
+            telegram_id,
+            surface='weekly_summary_view',
+        )
+        return WEEKLY_SUMMARY_BUDGET_REACHED
+
+    summary = await asyncio.to_thread(deps.llm_svc.get_weekly_summary, entries)
+    return WEEKLY_SUMMARY_LLM_INTRO + escape_md(summary)

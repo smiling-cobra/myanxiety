@@ -50,6 +50,17 @@ def notifications_collection():
     return get_collection('notifications')
 
 
+# Product analytics. Behavioural events and per-user LLM spend counters — never
+# entry text (see services/analytics_service.py). Both are user-linked, so both
+# belong in the /delete fan-out when that ships.
+def events_collection():
+    return get_collection('events')
+
+
+def usage_collection():
+    return get_collection('usage')
+
+
 # python-telegram-bot persistence. Framework state, not domain data — kept in
 # their own collections so a /delete fan-out can see them for what they are.
 def conversations_collection():

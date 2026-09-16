@@ -39,6 +39,29 @@ def get_guidance_keyboard():
     )
 
 
+THERAPY_YES = 'Yes'
+THERAPY_NO = 'No'
+THERAPY_UNDISCLOSED = 'Prefer not to say'
+
+# The cohort answer is a closed vocabulary so it can be grouped in analytics.
+# "Prefer not to say" is a real answer, distinct from never having been asked —
+# a user who skipped is not the same cohort as one onboarded before the
+# question existed.
+THERAPY_ANSWERS = {
+    THERAPY_YES: 'yes',
+    THERAPY_NO: 'no',
+    THERAPY_UNDISCLOSED: 'undisclosed',
+}
+
+
+def get_therapy_keyboard():
+    return ReplyKeyboardMarkup(
+        [[THERAPY_YES, THERAPY_NO], [THERAPY_UNDISCLOSED]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
 def get_timezone_keyboard():
     return ReplyKeyboardMarkup(
         [[KeyboardButton('📍 Share my location', request_location=True)]],

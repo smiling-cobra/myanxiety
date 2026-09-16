@@ -7,8 +7,11 @@ from zoneinfo import ZoneInfo
 
 from messages.markdown import escape_md
 from messages.strings import REMINDER_MESSAGE, WEEKLY_SUMMARY_NOTIFICATION
+from services import analytics_service as analytics
+from services.analytics_service import AnalyticsService
 from services.journal_service import JournalService, MIN_ENTRIES_FOR_WEEKLY_SUMMARY
 from services.llm_service import LlmService
+from services.usage_service import UsageService
 from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
@@ -67,6 +70,8 @@ class SchedulerService:
         self._user_svc = UserService()
         self._journal_svc = JournalService()
         self._llm_svc = LlmService()
+        self._analytics_svc = AnalyticsService()
+        self._usage_svc = UsageService()
         self._inflight: set[tuple[str, int]] = set()
 
     def start(self, job_queue) -> None:
@@ -138,6 +143,9 @@ class SchedulerService:
             user['telegram_id'],
             last_reminder_sent=today,
         )
+        await asyncio.to_thread(
+            self._analytics_svc.track, analytics.REMINDER_SENT, user['telegram_id'], day=today
+        )
         logger.info('Reminder sent to user %s.', user['telegram_id'])
 
     async def _send_weekly_summary(self, context, user: dict, today: str) -> None:
@@ -149,11 +157,26 @@ class SchedulerService:
             # `last_weekly_summary_sent` is untouched, so without a separate
             # watermark this scan would repeat on every tick until the window
             # closed, and next week's attempt would still be due on schedule.
+            await self._skip_weekly_summary(user, today, 'too_few_entries', entry_count=len(entries))
+            return
+
+        # The single most expensive call the bot makes — a whole week of entries
+        # in one prompt — and the only one a user never asked for. It is charged
+        # to the same daily budget as everything else, so a user who spent their
+        # day at the ceiling does not also get billed for this in their sleep.
+        allowed = await asyncio.to_thread(
+            self._usage_svc.consume_llm, user['telegram_id'], 1, user['timezone']
+        )
+        if not allowed:
             await asyncio.to_thread(
-                self._user_svc.create_or_update,
+                self._analytics_svc.track,
+                analytics.LLM_BUDGET_EXCEEDED,
                 user['telegram_id'],
-                last_weekly_summary_check=today,
+                surface='weekly_summary_job',
             )
+            # The check watermark closes today's window; `last_weekly_summary_sent`
+            # is untouched, so tomorrow's tick tries again on a fresh budget.
+            await self._skip_weekly_summary(user, today, 'llm_budget', entry_count=len(entries))
             return
 
         summary = await asyncio.to_thread(self._llm_svc.get_weekly_summary, entries)
@@ -168,7 +191,29 @@ class SchedulerService:
             last_weekly_summary_sent=today,
             last_weekly_summary_check=today,
         )
+        await asyncio.to_thread(
+            self._analytics_svc.track,
+            analytics.WEEKLY_SUMMARY_SENT,
+            user['telegram_id'],
+            entry_count=len(entries),
+            day=today,
+        )
         logger.info('Weekly summary sent to user %s.', user['telegram_id'])
+
+    async def _skip_weekly_summary(self, user: dict, today: str, reason: str, **props) -> None:
+        """Close today's window without sending, and say why in the event stream."""
+        await asyncio.to_thread(
+            self._user_svc.create_or_update,
+            user['telegram_id'],
+            last_weekly_summary_check=today,
+        )
+        await asyncio.to_thread(
+            self._analytics_svc.track,
+            analytics.WEEKLY_SUMMARY_SKIPPED,
+            user['telegram_id'],
+            reason=reason,
+            **props,
+        )
 
     # ------------------------------------------------------------------
     # Due rules

@@ -12,6 +12,11 @@ PRIVACY_NOTICE = (
     "extracts the tags and generates your weekly summary. Under its API terms that "
     "text is not used to train models.\n"
     "• Messages travel through Telegram, so they are not end-to-end encrypted.\n"
+    "• Your entry is also checked here against a fixed list of crisis-related phrases, "
+    "so I can offer support resources when they might help. It's a plain keyword match "
+    "on this server — nothing extra is sent anywhere, and no judgement is made about you.\n"
+    "• I record which features you use and when — never what you write — to see whether "
+    "the bot is actually helping. Those records are deleted after 180 days.\n"
     "• There's no self-serve delete yet — it's being built. Until then, ask and "
     "your data will be removed.\n"
     "• I'm a journalling tool. I'm not a therapist, a diagnosis, or a crisis service.\n\n"
@@ -42,6 +47,14 @@ ONBOARDING_TIME = (
     "Please use 24h format, e.g. 09:00 or 21:30."
 )
 
+ONBOARDING_THERAPY = (
+    "Last thing, and it's optional.\n\n"
+    "Are you currently working with a therapist or counsellor?\n\n"
+    "I ask because I'm being built to help people take something useful into a session, "
+    "and knowing who that applies to shapes what gets built next. It changes nothing about "
+    "how I treat you, and you're welcome to skip it."
+)
+
 ONBOARDING_DONE = (
     "You're all set, {name}! ✅\n\n"
     "I'll check in with you every day at {reminder_time} ({timezone}).\n\n"
@@ -63,6 +76,18 @@ CHECK_IN_TEXT_PROMPT = (
 CHECK_IN_DONE = (
     "Thank you for sharing, {name}.\n\n"
     "{llm_response}\n\n"
+    "_{streak} day(s) in a row. Keep it up!_"
+)
+
+# Shown instead of CHECK_IN_DONE once a user is at their daily LLM ceiling.
+# The entry is saved either way — only the written reflection is missing, and
+# the copy says so, because silently returning a shorter reply would read as
+# the bot losing interest.
+CHECK_IN_DONE_BRIEF = (
+    "Thank you for sharing, {name}. Your entry is saved. 📝\n\n"
+    "I've reached my limit for written replies today, so there's no reflection from me "
+    "this time — but what you wrote is safely in your journal, and I'll be back to normal "
+    "tomorrow.\n\n"
     "_{streak} day(s) in a row. Keep it up!_"
 )
 
@@ -120,6 +145,24 @@ GUIDANCE_ERROR_MESSAGE = (
     "Please try again later, or reach out to someone you trust."
 )
 
+# The guidance path is the one place a user has explicitly asked for help and
+# is, by definition, having a hard time. When the LLM cannot be called, they get
+# this rather than an apology: a fixed, well-established grounding exercise is
+# worth more in that moment than a tailored paragraph they never receive.
+GUIDANCE_STATIC_FALLBACK = (
+    "I can't tailor suggestions right now, so here's something that helps many people "
+    "in the moment:\n\n"
+    "1. *Ground yourself.* Name 5 things you can see, 4 you can touch, 3 you can hear, "
+    "2 you can smell, 1 you can taste. Say them out loud if you can.\n"
+    "2. *Slow your breathing.* In for 4 counts, hold for 4, out for 6. Six rounds. "
+    "The long exhale is the part that does the work.\n"
+    "3. *Change your temperature.* Cold water on your face or wrists for 30 seconds "
+    "settles the body faster than trying to talk yourself down.\n"
+    "4. *Make the next step small.* One glass of water, one open window, one message "
+    "to someone you trust — not the whole problem.\n\n"
+    "You reached out, and that counts. I'm here tomorrow."
+)
+
 GUIDANCE_CRISIS_RESOURCES = (
     "———\n"
     "If you're in crisis or having thoughts of harming yourself, please reach out:\n"
@@ -148,6 +191,11 @@ WEEKLY_SUMMARY_TAGS = "\n🏷 *Top themes*: {tags}\n"
 WEEKLY_SUMMARY_LLM_INTRO = "\n💬 *Patterns this week*\n"
 
 WEEKLY_SUMMARY_TOO_FEW = "\n_Check in a few more times this week for pattern insights._"
+
+WEEKLY_SUMMARY_BUDGET_REACHED = (
+    "\n_Pattern insights are paused until tomorrow — you've reached today's limit. "
+    "Your trend above is complete._"
+)
 
 WEEKLY_SUMMARY_NOTIFICATION = (
     "📈 *Your weekly insight*\n\n"

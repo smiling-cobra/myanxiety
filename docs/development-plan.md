@@ -111,6 +111,8 @@ Then ship two user-control surfaces: a basic therapist-shareable export and a co
 
 The delete flow must enumerate every PII-bearing location, including any future conversation-persistence store, not just the current user, entry, and streak collections.
 
+As of Phase 4 that list is: `users`, `entries`, `streaks`, `notifications`, `ptb_conversations`, `ptb_user_data`, `events`, and `usage`. `EventRepository.delete_for_user` and `UsageRepository.delete_for_user` already exist for the last two.
+
 Optional adjacent feature: add a lightweight “flag for session” marker on entries if you want one small feature that directly improves the therapist-sharing workflow without expanding into clinician tooling.
 
 Primary anchors:
