@@ -359,6 +359,18 @@ class TestShowStats:
         from messages.strings import ERROR_GENERIC
         assert update.message.reply_text.call_args.args[0] == ERROR_GENERIC
 
+    async def test_tag_variants_are_counted_as_one_theme(self):
+        update = _update('')
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc:
+            mock_svc.get_stats.return_value = {'total': 3, 'streak': 1, 'avg_mood': 5}
+            mock_svc.get_recent_entries.return_value = [
+                {'tags': ['job']}, {'tags': ['Work']}, {'tags': ['work stress', 'sleep']},
+            ]
+            await show_stats(update, _context())
+        text = update.message.reply_text.call_args.args[0]
+        assert 'Top tags: #work, #sleep' in text
+        assert 'job' not in text
+
 
 # ---------------------------------------------------------------------------
 # Phase 4 — mood bar helper

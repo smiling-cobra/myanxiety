@@ -202,3 +202,26 @@ class TestExtractTagsOnFailure:
         svc = _svc()
         svc._client.messages.create.side_effect = Exception('API down')
         assert svc.get_empathetic_response(5, 'entry') == FALLBACK_REPLY
+
+
+class TestExtractTagsNormalises:
+    def test_variants_in_the_reply_are_stored_canonically(self):
+        svc = _svc()
+        svc._client.messages.create.return_value = _mock_response('Job, #Deadlines, insomnia')
+        assert svc.extract_tags('entry') == ['work', 'sleep']
+
+    def test_prose_in_the_reply_is_not_a_tag(self):
+        svc = _svc()
+        svc._client.messages.create.return_value = _mock_response(
+            'Here are the tags for this journal entry, work, sleep'
+        )
+        assert svc.extract_tags('entry') == ['work', 'sleep']
+
+    def test_prompt_offers_the_vocabulary(self):
+        from services.tags import CANONICAL_TAGS
+
+        svc = _svc()
+        svc._client.messages.create.return_value = _mock_response('work')
+        svc.extract_tags('entry')
+        prompt = svc._client.messages.create.call_args.kwargs['messages'][0]['content']
+        assert all(tag in prompt for tag in CANONICAL_TAGS)

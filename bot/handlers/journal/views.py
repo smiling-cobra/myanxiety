@@ -5,7 +5,6 @@ Service calls go through `asyncio.to_thread` — see the package docstring.
 from __future__ import annotations
 
 import asyncio
-from collections import Counter
 from datetime import tzinfo
 
 from telegram import Update
@@ -32,12 +31,17 @@ from messages.strings import (
 )
 from services import analytics_service as analytics
 from services.journal_service import MIN_ENTRIES_FOR_WEEKLY_SUMMARY
+from services.tags import top_tags
 from services.time_utils import resolve_timezone, to_local
 
 
 def mood_bar(score: int) -> str:
     n = max(0, min(10, score))
     return '▓' * n + '░' * (10 - n)
+
+
+def _format_tags(tags: list) -> str:
+    return ', '.join(f'#{escape_md(t)}' for t in tags) or 'none yet'
 
 
 async def _user_timezone(telegram_id: int) -> tuple[str | None, tzinfo]:
@@ -93,15 +97,14 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(STATS_EMPTY, reply_markup=get_main_menu_keyboard())
         return MAIN_MENU
 
-    all_tags = [tag for e in entries for tag in e.get('tags', [])]
-    top_tags = ', '.join(f'#{escape_md(t)}' for t, _ in Counter(all_tags).most_common(3)) or 'none yet'
+    tags = _format_tags(top_tags(entries, 3))
 
     await update.message.reply_text(
         STATS_MESSAGE.format(
             streak=stats['streak'],
             total=stats['total'],
             avg_mood=stats['avg_mood'],
-            tags=top_tags,
+            tags=tags,
         ),
         parse_mode='Markdown',
         reply_markup=get_main_menu_keyboard(),
@@ -135,9 +138,7 @@ async def show_weekly_summary(update: Update, context: ContextTypes.DEFAULT_TYPE
             day=to_local(e['created_at'], tz).strftime('%a %d %b'),
         )
 
-    all_tags = [tag for e in entries for tag in e.get('tags', [])]
-    top_tags = ', '.join(f'#{escape_md(t)}' for t, _ in Counter(all_tags).most_common(5)) or 'none yet'
-    body += WEEKLY_SUMMARY_TAGS.format(tags=top_tags)
+    body += WEEKLY_SUMMARY_TAGS.format(tags=_format_tags(top_tags(entries, 5)))
 
     body += await _pattern_paragraph(telegram_id, name, entries)
 
