@@ -828,6 +828,7 @@ class TestHandlersAreCoroutines:
             journal.show_history,
             journal.show_stats,
             journal.show_weekly_summary,
+            journal.send_export,
             journal.handle_guidance_offer,
             journal.cancel,
             journal.recover_state,
@@ -1444,3 +1445,80 @@ class TestFailedCheckInRefundsTheUnspentCall:
             mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 6}
             await handle_entry_text(_update('A quiet day'), ctx)
         usage.refund.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — /export
+# ---------------------------------------------------------------------------
+
+class TestSendExport:
+    @staticmethod
+    def _export(count: int = 3):
+        from services.export_service import Export
+        return Export(filename='journal-2026-09-30.md', content=b'# Journal', entry_count=count)
+
+    async def test_the_file_is_sent_as_a_document(self):
+        from bot.handlers.journal import send_export
+        update = _update('/export')
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            export_svc.build.return_value = self._export()
+            state = await send_export(update, _context())
+        assert state == MAIN_MENU
+        kwargs = update.message.reply_document.call_args.kwargs
+        assert kwargs['document'] == b'# Journal'
+        assert kwargs['filename'] == 'journal-2026-09-30.md'
+        assert '3 entries' in kwargs['caption']
+        assert len(kwargs['caption']) <= 1024
+
+    async def test_nothing_to_export_says_so_and_sends_no_file(self):
+        from bot.handlers.journal import send_export
+        update = _update('/export')
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            export_svc.build.return_value = None
+            state = await send_export(update, _context())
+        assert state == MAIN_MENU
+        update.message.reply_document.assert_not_called()
+        assert 'nothing to export' in update.message.reply_text.call_args.args[0]
+
+    async def test_a_failure_returns_to_the_menu_with_an_apology(self):
+        from bot.handlers.journal import send_export
+        from messages.strings import ERROR_GENERIC
+        update = _update('/export')
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc:
+            export_svc.build.side_effect = Exception('DB down')
+            state = await send_export(update, _context())
+        assert state == MAIN_MENU
+        assert update.message.reply_text.call_args.args[0] == ERROR_GENERIC
+
+    async def test_the_request_is_recorded_including_empty_ones(self):
+        from bot.handlers.journal import send_export
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            export_svc.build.return_value = None
+            await send_export(_update('/export'), _context())
+        event, _ = analytics.track.call_args.args
+        assert event == 'export_requested'
+        assert analytics.track.call_args.kwargs == {'entry_count': 0, 'days': 30}
+
+    async def test_the_menu_button_exports(self):
+        from bot.handlers.journal import handle_main_menu
+        from bot.keyboards import EXPORT
+        update = _update(EXPORT)
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            export_svc.build.return_value = self._export()
+            await handle_main_menu(update, _context({'name': 'Sam'}))
+        assert update.message.reply_document.called
+
+    async def test_a_stale_export_button_works_after_state_loss(self):
+        from bot.keyboards import EXPORT
+        update = _update(EXPORT)
+        with patch('bot.handlers.journal.deps.user_svc') as user_svc, \
+             patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            user_svc.get.return_value = {'telegram_id': 12345, 'name': 'Sam', 'onboarded': True}
+            export_svc.build.return_value = self._export()
+            await recover_state(update, _context())
+        assert update.message.reply_document.called

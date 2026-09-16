@@ -6,9 +6,10 @@ from telegram.ext import ContextTypes, ConversationHandler
 from bot.handlers.journal import deps
 from bot.handlers.journal.onboarding import start
 from bot.handlers.journal.states import CHECK_IN_MOOD, MAIN_MENU
+from bot.handlers.journal.export import send_export
 from bot.handlers.journal.views import show_history, show_stats, show_weekly_summary
 from bot.keyboards import (
-    CHECK_IN, HELP, HISTORY, MAIN_MENU_CHOICES, STATS, WEEKLY_SUMMARY,
+    CHECK_IN, EXPORT, HELP, HISTORY, MAIN_MENU_CHOICES, STATS, WEEKLY_SUMMARY,
     get_main_menu_keyboard, get_mood_keyboard,
 )
 from messages.strings import CANCEL_MESSAGE, CHECK_IN_MOOD_PROMPT, HELP_MESSAGE, MAIN_MENU_MESSAGE
@@ -37,6 +38,9 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if choice == WEEKLY_SUMMARY:
         return await show_weekly_summary(update, context)
+
+    if choice == EXPORT:
+        return await send_export(update, context)
 
     if choice == HELP:
         await update.message.reply_text(HELP_MESSAGE, parse_mode='Markdown')

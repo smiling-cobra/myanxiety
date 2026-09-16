@@ -17,6 +17,8 @@ PRIVACY_NOTICE = (
     "on this server — nothing extra is sent anywhere, and no judgement is made about you.\n"
     "• I record which features you use and when — never what you write — to see whether "
     "the bot is actually helping. Those records are deleted after 180 days.\n"
+    "• */export* sends you a file of your recent entries, in this chat. Once you have it, "
+    "where it goes is up to you.\n"
     "• There's no self-serve delete yet — it's being built. Until then, ask and "
     "your data will be removed.\n"
     "• I'm a journalling tool. I'm not a therapist, a diagnosis, or a crisis service.\n\n"
@@ -111,11 +113,13 @@ HELP_MESSAGE = (
     "Here's what I can do:\n\n"
     "*Check In* — Start your daily journal entry\n"
     "*History* — See your last 7 entries\n"
-    "*Stats* — View your streak and mood trends\n\n"
+    "*Stats* — View your streak and mood trends\n"
+    "*Export* — Get a file of the last 30 days to take to a therapy session\n\n"
     "You can also use these commands any time:\n"
     "*/history* — Show your recent entries\n"
     "*/stats* — Show your stats\n"
     "*/summary* — Show your weekly mood summary\n"
+    "*/export* — Get a file of your recent entries\n"
     "*/privacy* — What happens to what you write\n"
     "*/cancel* — End the current session\n\n"
     "———\n"
@@ -201,6 +205,19 @@ WEEKLY_SUMMARY_NOTIFICATION = (
     "📈 *Your weekly insight*\n\n"
     "{summary}\n\n"
     "_Open your journal to see the full mood trend._"
+)
+
+EXPORT_EMPTY = (
+    "There's nothing to export yet — you haven't written any entries in the last {days} days. "
+    "Tap *Check In* to start one."
+)
+
+# Sent as the document's caption, so it must stay under Telegram's 1024-character
+# caption limit. Plain text: captions are not parsed as Markdown here.
+EXPORT_CAPTION = (
+    "Your journal for the last {days} days — {count} {entries}.\n\n"
+    "It's a plain text file you can open on your phone, print, or show to your therapist. "
+    "It has everything you wrote in full, so share it only with people you trust."
 )
 
 CANCEL_MESSAGE = "Take care, {name}. I'm here whenever you need me. 🌿"

@@ -77,6 +77,7 @@ class TestCommandsWorkFromAnywhere:
         ('/history', 'show_history'),
         ('/stats', 'show_stats'),
         ('/summary', 'show_weekly_summary'),
+        ('/export', 'send_export'),
     ])
     def test_before_any_conversation(self, conversation, command, expected):
         assert _route(conversation, None, command) == expected
@@ -84,6 +85,7 @@ class TestCommandsWorkFromAnywhere:
     @pytest.mark.parametrize('command, expected', [
         ('/start', 'start'),
         ('/history', 'show_history'),
+        ('/export', 'send_export'),
         ('/cancel', 'cancel'),
     ])
     @pytest.mark.parametrize('state', [journal.CHECK_IN_MOOD, journal.CHECK_IN_TEXT, journal.ONBOARDING_NAME])

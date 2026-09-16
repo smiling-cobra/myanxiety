@@ -64,6 +64,9 @@ HISTORY_VIEWED = 'history_viewed'
 STATS_VIEWED = 'stats_viewed'
 WEEKLY_SUMMARY_VIEWED = 'weekly_summary_viewed'
 
+# User control
+EXPORT_REQUESTED = 'export_requested'
+
 # Spend and failure
 LLM_BUDGET_EXCEEDED = 'llm_budget_exceeded'
 HANDLER_ERROR = 'handler_error'

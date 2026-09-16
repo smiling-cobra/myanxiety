@@ -165,11 +165,16 @@ def parse_tag_list(raw: str) -> list[str]:
 
 
 def top_tags(entries: Iterable[dict], limit: int) -> list[str]:
-    """The most common tags across `entries`, most frequent first.
+    """The most common tags across `entries`, most frequent first."""
+    return [tag for tag, _ in tag_counts(entries, limit)]
+
+
+def tag_counts(entries: Iterable[dict], limit: int) -> list[tuple[str, int]]:
+    """The most common tags across `entries` with the number of entries each came up in.
 
     Stored tags are re-normalised on the way in, so the count reflects the
     current vocabulary however old the entries are. Each tag counts once per
     entry: the question is how many entries a theme came up in.
     """
     counts = Counter(tag for entry in entries for tag in normalise_tags(entry.get('tags') or []))
-    return [tag for tag, _ in counts.most_common(limit)]
+    return counts.most_common(limit)

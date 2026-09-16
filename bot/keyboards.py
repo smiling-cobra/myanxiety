@@ -4,17 +4,18 @@ CHECK_IN = '📝 Check In'
 HISTORY = '📖 History'
 STATS = '📊 Stats'
 WEEKLY_SUMMARY = '📈 Weekly Summary'
+EXPORT = '📤 Export'
 HELP = '❓ Help'
 BACK = '🔙 Back'
 
 # The buttons a main-menu keyboard can produce. A keyboard outlives the
 # conversation that sent it, so a recovered session needs to recognise them.
-MAIN_MENU_CHOICES = (CHECK_IN, HISTORY, STATS, WEEKLY_SUMMARY, HELP)
+MAIN_MENU_CHOICES = (CHECK_IN, HISTORY, STATS, WEEKLY_SUMMARY, EXPORT, HELP)
 
 
 def get_main_menu_keyboard():
     return ReplyKeyboardMarkup(
-        [[CHECK_IN], [HISTORY, STATS], [WEEKLY_SUMMARY], [HELP]],
+        [[CHECK_IN], [HISTORY, STATS], [WEEKLY_SUMMARY, EXPORT], [HELP]],
         resize_keyboard=True
     )
 
