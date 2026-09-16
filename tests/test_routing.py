@@ -80,6 +80,7 @@ class TestCommandsWorkFromAnywhere:
         ('/summary', 'show_weekly_summary'),
         ('/export', 'send_export'),
         ('/delete', 'request_delete'),
+        ('/flag', 'toggle_flag'),
     ])
     def test_before_any_conversation(self, conversation, command, expected):
         assert _route(conversation, None, command) == expected
@@ -89,6 +90,7 @@ class TestCommandsWorkFromAnywhere:
         ('/history', 'show_history'),
         ('/export', 'send_export'),
         ('/delete', 'request_delete'),
+        ('/flag', 'toggle_flag'),
         ('/cancel', 'cancel'),
     ])
     @pytest.mark.parametrize('state', [journal.CHECK_IN_MOOD, journal.CHECK_IN_TEXT, journal.ONBOARDING_NAME])

@@ -18,14 +18,14 @@ machine and `register()`. Each responsibility lives in its own submodule:
     menu.py         the main-menu router, /cancel, and lost-state recovery
     checkin.py      mood rating, entry text, LLM response, guidance offer
     views.py        history, stats, weekly summary
-    export.py       /export — the therapist-shareable file
+    export.py       /export — the therapist-shareable file, and /flag for it
     account.py      /delete — confirmation and the full fan-out
 """
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 
 from bot.handlers.journal.account import handle_delete_confirmation, request_delete
 from bot.handlers.journal.checkin import handle_entry_text, handle_guidance_offer, handle_mood
-from bot.handlers.journal.export import send_export
+from bot.handlers.journal.export import send_export, toggle_flag
 from bot.handlers.journal.menu import cancel, handle_main_menu, recover_state
 from bot.handlers.journal.onboarding import (
     handle_name,
@@ -72,6 +72,7 @@ __all__ = [
     'show_stats',
     'show_weekly_summary',
     'send_export',
+    'toggle_flag',
     'request_delete',
     'handle_delete_confirmation',
     'cancel',
@@ -89,6 +90,7 @@ def register(application: Application) -> None:
         CommandHandler('stats', show_stats),
         CommandHandler('summary', show_weekly_summary),
         CommandHandler('export', send_export),
+        CommandHandler('flag', toggle_flag),
         CommandHandler('delete', request_delete),
     ]
     handler = ConversationHandler(

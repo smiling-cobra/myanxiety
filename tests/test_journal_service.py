@@ -190,3 +190,31 @@ class TestStats:
         svc.save_entry(other, 3, "theirs")
         assert svc.get_stats(USER)['total'] == 1
         assert svc.get_stats(other)['total'] == 1
+
+
+class TestSessionFlag:
+    def test_no_entries_is_none(self, svc):
+        assert svc.toggle_session_flag(USER) is None
+
+    def test_flags_only_the_latest_entry(self, svc):
+        from repositories.entry_repo import EntryRepository
+        _save_at(svc, datetime(2026, 3, 25, 10, 0, tzinfo=UTC), text='older')
+        _save_at(svc, datetime(2026, 3, 26, 10, 0, tzinfo=UTC), text='newer')
+
+        entry = svc.toggle_session_flag(USER)
+
+        assert entry['text'] == 'newer'
+        assert entry['flagged_for_session'] is True
+        stored = {e['text']: e.get('flagged_for_session') for e in EntryRepository().find_recent(USER)}
+        assert stored == {'newer': True, 'older': None}
+
+    def test_a_second_toggle_unflags(self, svc):
+        from repositories.entry_repo import EntryRepository
+        _save_at(svc, datetime(2026, 3, 26, 10, 0, tzinfo=UTC))
+        svc.toggle_session_flag(USER)
+        assert svc.toggle_session_flag(USER)['flagged_for_session'] is False
+        assert EntryRepository().find_recent(USER)[0]['flagged_for_session'] is False
+
+    def test_is_user_scoped(self, svc):
+        _save_at(svc, datetime(2026, 3, 26, 10, 0, tzinfo=UTC))
+        assert svc.toggle_session_flag(999) is None

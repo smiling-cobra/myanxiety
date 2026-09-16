@@ -831,6 +831,7 @@ class TestHandlersAreCoroutines:
             journal.show_stats,
             journal.show_weekly_summary,
             journal.send_export,
+            journal.toggle_flag,
             journal.request_delete,
             journal.handle_delete_confirmation,
             journal.handle_guidance_offer,
@@ -1459,7 +1460,7 @@ class TestSendExport:
     @staticmethod
     def _export(count: int = 3):
         from services.export_service import Export
-        return Export(filename='journal-2026-09-30.md', content=b'# Journal', entry_count=count)
+        return Export(filename='journal-2026-09-30.md', content=b'# Journal', entry_count=count, flagged_count=0)
 
     async def test_the_file_is_sent_as_a_document(self):
         from bot.handlers.journal import send_export
@@ -1504,7 +1505,7 @@ class TestSendExport:
             await send_export(_update('/export'), _context())
         event, _ = analytics.track.call_args.args
         assert event == 'export_requested'
-        assert analytics.track.call_args.kwargs == {'entry_count': 0, 'days': 30}
+        assert analytics.track.call_args.kwargs == {'entry_count': 0, 'flagged_count': 0, 'days': 30}
 
     async def test_the_menu_button_exports(self):
         from bot.handlers.journal import handle_main_menu
@@ -1639,3 +1640,47 @@ class TestDelete:
         assert '/delete' in PRIVACY_NOTICE
         assert '/delete' in HELP_MESSAGE
         assert 'no self-serve delete' not in PRIVACY_NOTICE.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — /flag, marking an entry to raise in session
+# ---------------------------------------------------------------------------
+
+class TestToggleFlag:
+    async def _flag(self, entry):
+        from bot.handlers.journal import toggle_flag
+        update = _update('/flag')
+        with patch('bot.handlers.journal.deps.journal_svc') as journal_svc, \
+             patch('bot.handlers.journal.deps.user_svc') as user_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            journal_svc.toggle_session_flag.return_value = entry
+            user_svc.get.return_value = {'timezone': 'Pacific/Kiritimati'}
+            state = await toggle_flag(update, _context())
+        return state, update.message.reply_text.call_args.args[0], analytics
+
+    async def test_flagging_confirms_which_entry_in_local_time(self):
+        # 11:00 UTC on Thu 26 Mar is already Fri 27 Mar in Kiritimati (UTC+14).
+        state, text, _ = await self._flag({'created_at': datetime(2026, 3, 26, 11, 0), 'flagged_for_session': True})
+        assert state == MAIN_MENU
+        assert 'Flagged your entry from Fri 27 Mar' in text
+
+    async def test_unflagging_says_so(self):
+        _, text, _ = await self._flag({'created_at': datetime(2026, 3, 26, 11, 0), 'flagged_for_session': False})
+        assert text.startswith('Removed the flag')
+
+    async def test_no_entries_yet(self):
+        from messages.strings import FLAG_NO_ENTRY
+        state, text, analytics = await self._flag(None)
+        assert state == MAIN_MENU
+        assert text == FLAG_NO_ENTRY
+        analytics.track.assert_not_called()
+
+    async def test_the_toggle_is_recorded_without_content(self):
+        _, _, analytics = await self._flag({'created_at': datetime(2026, 3, 26, 11, 0), 'flagged_for_session': True})
+        assert analytics.track.call_args.args[0] == 'session_flag_toggled'
+        assert analytics.track.call_args.kwargs == {'flagged': True}
+
+    def test_the_check_in_reply_points_at_it(self):
+        from messages.strings import CHECK_IN_DONE, CHECK_IN_DONE_BRIEF
+        assert '/flag' in CHECK_IN_DONE
+        assert '/flag' in CHECK_IN_DONE_BRIEF

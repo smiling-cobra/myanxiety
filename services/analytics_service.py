@@ -66,6 +66,7 @@ WEEKLY_SUMMARY_VIEWED = 'weekly_summary_viewed'
 
 # User control
 EXPORT_REQUESTED = 'export_requested'
+SESSION_FLAG_TOGGLED = 'session_flag_toggled'
 DELETE_CANCELLED = 'delete_cancelled'
 # Recorded *after* the fan-out, with no telegram_id: every event the user ever
 # generated has just been deleted, and this one must not be the row that

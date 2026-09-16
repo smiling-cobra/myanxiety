@@ -93,8 +93,11 @@ def _render(entries, tz=UTC, name='Sam') -> str:
     return render_export(name, entries, tz, date(2026, 9, 30))
 
 
-def _e(text='x', mood=5, when=NOW, tags=None) -> dict:
-    return {'text': text, 'mood_score': mood, 'created_at': when, 'tags': tags or []}
+def _e(text='x', mood=5, when=NOW, tags=None, flagged=None) -> dict:
+    entry = {'text': text, 'mood_score': mood, 'created_at': when, 'tags': tags or []}
+    if flagged is not None:
+        entry['flagged_for_session'] = flagged
+    return entry
 
 
 class TestRender:
@@ -140,3 +143,41 @@ class TestRender:
 
     def test_says_what_it_is_not(self):
         assert 'not a clinical record' in _render([_e()])
+
+
+class TestSessionFlags:
+    def test_flagged_entries_are_listed_before_everything_else(self):
+        text = _render([
+            _e('an ordinary day', when=NOW - timedelta(days=1)),
+            _e('the thing I want to talk about', mood=3, flagged=True),
+        ])
+        assert '## To raise in session' in text
+        assert text.index('## To raise in session') < text.index('## At a glance')
+        section = text.split('## To raise in session')[1].split('## At a glance')[0]
+        assert 'the thing I want to talk about' in section
+        assert 'an ordinary day' not in section
+
+    def test_no_flags_no_section(self):
+        assert 'To raise in session' not in _render([_e(), _e(flagged=False)])
+
+    def test_the_entry_itself_is_marked(self):
+        text = _render([_e('flag me', flagged=True)])
+        entries = text.split('## Entries')[1]
+        assert 'Flagged to raise in session' in entries
+
+    def test_long_entries_are_previewed_on_one_line(self):
+        long_text = 'word ' * 60 + '\nsecond line'
+        section = _render([_e(long_text, flagged=True)]).split('## To raise in session')[1].split('##')[0]
+        preview = [line for line in section.splitlines() if line.startswith('- ')]
+        assert len(preview) == 1
+        assert preview[0].endswith('…')
+
+    def test_build_counts_flags(self, svc):
+        _user()
+        _entry('one')
+        _entry('two', when=NOW + timedelta(minutes=1))
+        with patch('services.time_utils.now', return_value=NOW + timedelta(minutes=2)):
+            from services.journal_service import JournalService
+            JournalService().toggle_session_flag(USER)
+            export = svc.build(USER)
+        assert export.flagged_count == 1

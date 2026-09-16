@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from db.db import entries_collection
 
 
@@ -12,6 +14,13 @@ class EntryRepository:
             .sort('created_at', -1)
             .limit(limit)
         )
+
+    def find_latest(self, telegram_id: int) -> dict | None:
+        """The newest entry, with its `_id` — the one field the other reads project away."""
+        return entries_collection().find_one({'telegram_id': telegram_id}, sort=[('created_at', -1)])
+
+    def set_flagged(self, entry_id, flagged: bool) -> None:
+        entries_collection().update_one({'_id': entry_id}, {'$set': {'flagged_for_session': flagged}})
 
     def count(self, telegram_id: int) -> int:
         return entries_collection().count_documents({'telegram_id': telegram_id})

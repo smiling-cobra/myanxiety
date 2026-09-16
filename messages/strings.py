@@ -77,7 +77,8 @@ CHECK_IN_TEXT_PROMPT = (
 CHECK_IN_DONE = (
     "Thank you for sharing, {name}.\n\n"
     "{llm_response}\n\n"
-    "_{streak} day(s) in a row. Keep it up!_"
+    "_{streak} day(s) in a row. Keep it up!_\n\n"
+    "Want to talk about this in therapy? Send /flag."
 )
 
 # Shown instead of CHECK_IN_DONE once a user is at their daily LLM ceiling.
@@ -89,7 +90,8 @@ CHECK_IN_DONE_BRIEF = (
     "I've reached my limit for written replies today, so there's no reflection from me "
     "this time — but what you wrote is safely in your journal, and I'll be back to normal "
     "tomorrow.\n\n"
-    "_{streak} day(s) in a row. Keep it up!_"
+    "_{streak} day(s) in a row. Keep it up!_\n\n"
+    "Want to talk about this in therapy? Send /flag."
 )
 
 HISTORY_EMPTY = "You haven't made any entries yet. Tap *Check In* to start!"
@@ -119,6 +121,7 @@ HELP_MESSAGE = (
     "*/stats* — Show your stats\n"
     "*/summary* — Show your weekly mood summary\n"
     "*/export* — Get a file of your recent entries\n"
+    "*/flag* — Mark your latest entry to raise in your next session\n"
     "*/delete* — Permanently delete everything I store about you\n"
     "*/privacy* — What happens to what you write\n"
     "*/cancel* — End the current session\n\n"
@@ -219,6 +222,16 @@ EXPORT_CAPTION = (
     "It's a plain text file you can open on your phone, print, or show to your therapist. "
     "It has everything you wrote in full, so share it only with people you trust."
 )
+
+FLAG_SET = (
+    "🚩 Flagged your entry from {date} to raise in your next session. "
+    "It'll be listed first when you */export*.\n\n"
+    "Send /flag again to remove the flag."
+)
+
+FLAG_CLEARED = "Removed the flag from your entry from {date}."
+
+FLAG_NO_ENTRY = "There's no entry to flag yet. Tap *Check In* to write one, then send /flag."
 
 DELETE_CONFIRM_PROMPT = (
     "*Delete everything?*\n\n"

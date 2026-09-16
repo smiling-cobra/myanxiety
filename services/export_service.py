@@ -36,6 +36,7 @@ EXPORT_DAYS = 30
 _TOP_THEMES = 5
 _BAR_WIDTH = 10
 _BLOCK_MARKERS = frozenset('#>-*+=`|')
+_PREVIEW_CHARS = 80
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class Export:
     filename: str
     content: bytes
     entry_count: int
+    flagged_count: int
 
 
 class ExportService:
@@ -65,6 +67,7 @@ class ExportService:
             filename=f'journal-{today.isoformat()}.md',
             content=markdown.encode('utf-8'),
             entry_count=len(entries),
+            flagged_count=sum(1 for e in entries if e.get('flagged_for_session')),
         )
 
 
@@ -80,6 +83,12 @@ def render_export(name: str | None, entries: list, tz: tzinfo, today: date) -> s
 
     lines = [f"# Journal — {name}" if name else "# Journal", ""]
     lines.append(f"{_long_date(first_day)} to {_long_date(last_day)} · exported {_long_date(today)}")
+    flagged = [(moment, e) for moment, e in local if e.get('flagged_for_session')]
+    if flagged:
+        # First, because it is the point of the file: what the user decided, at
+        # the time, that they wanted to talk about.
+        lines += ["", "## To raise in session", ""]
+        lines += [f"- {_heading(moment, e)}: {_preview(e['text'])}" for moment, e in flagged]
     lines += ["", "## At a glance", ""]
     lines += _summary(local)
     lines += ["", "## Mood by entry", "", "```"]
@@ -114,7 +123,9 @@ def _summary(local: list) -> list:
 
 
 def _entry(moment: datetime, entry: dict) -> list:
-    lines = [f"### {moment.strftime('%a %d %b %Y, %H:%M')} — mood {entry['mood_score']}/10", ""]
+    lines = [f"### {_heading(moment, entry)}", ""]
+    if entry.get('flagged_for_session'):
+        lines += ["🚩 **Flagged to raise in session**", ""]
     tags = normalise_tags(entry.get('tags') or [])
     if tags:
         lines += [f"Themes: {', '.join(tags)}", ""]
@@ -122,6 +133,16 @@ def _entry(moment: datetime, entry: dict) -> list:
     lines += [f"> {_literal(line)}" if line.strip() else ">" for line in entry['text'].splitlines() or ['']]
     lines.append("")
     return lines
+
+
+def _heading(moment: datetime, entry: dict) -> str:
+    return f"{moment.strftime('%a %d %b %Y, %H:%M')} — mood {entry['mood_score']}/10"
+
+
+def _preview(text: str) -> str:
+    """The start of an entry, on one line. The full text is further down the file."""
+    flat = ' '.join(text.split())
+    return flat if len(flat) <= _PREVIEW_CHARS else flat[:_PREVIEW_CHARS].rstrip() + '…'
 
 
 def _literal(line: str) -> str:
