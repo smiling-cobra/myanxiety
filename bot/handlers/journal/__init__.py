@@ -19,9 +19,11 @@ machine and `register()`. Each responsibility lives in its own submodule:
     checkin.py      mood rating, entry text, LLM response, guidance offer
     views.py        history, stats, weekly summary
     export.py       /export — the therapist-shareable file
+    account.py      /delete — confirmation and the full fan-out
 """
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 
+from bot.handlers.journal.account import handle_delete_confirmation, request_delete
 from bot.handlers.journal.checkin import handle_entry_text, handle_guidance_offer, handle_mood
 from bot.handlers.journal.export import send_export
 from bot.handlers.journal.menu import cancel, handle_main_menu, recover_state
@@ -37,6 +39,7 @@ from bot.handlers.journal.states import (
     CHECK_IN_GUIDANCE_OFFER,
     CHECK_IN_MOOD,
     CHECK_IN_TEXT,
+    DELETE_CONFIRM,
     MAIN_MENU,
     ONBOARDING_NAME,
     ONBOARDING_THERAPY,
@@ -54,6 +57,7 @@ __all__ = [
     'CHECK_IN_MOOD',
     'CHECK_IN_TEXT',
     'CHECK_IN_GUIDANCE_OFFER',
+    'DELETE_CONFIRM',
     'start',
     'handle_name',
     'handle_timezone',
@@ -68,6 +72,8 @@ __all__ = [
     'show_stats',
     'show_weekly_summary',
     'send_export',
+    'request_delete',
+    'handle_delete_confirmation',
     'cancel',
     'recover_state',
     'register',
@@ -83,6 +89,7 @@ def register(application: Application) -> None:
         CommandHandler('stats', show_stats),
         CommandHandler('summary', show_weekly_summary),
         CommandHandler('export', send_export),
+        CommandHandler('delete', request_delete),
     ]
     handler = ConversationHandler(
         entry_points=[
@@ -103,6 +110,7 @@ def register(application: Application) -> None:
             CHECK_IN_MOOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mood)],
             CHECK_IN_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_entry_text)],
             CHECK_IN_GUIDANCE_OFFER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_guidance_offer)],
+            DELETE_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delete_confirmation)],
         },
         # Commands reach an active conversation through the fallbacks, which are
         # consulted only after the current state's own handlers decline.

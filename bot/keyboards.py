@@ -63,6 +63,20 @@ def get_therapy_keyboard():
     )
 
 
+DELETE_YES = '🗑 Yes, delete everything'
+DELETE_NO = 'No, keep my journal'
+
+
+def get_delete_keyboard():
+    # Keep first: the button a stray tap is most likely to hit should be the
+    # one that changes nothing.
+    return ReplyKeyboardMarkup(
+        [[DELETE_NO], [DELETE_YES]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
 def get_timezone_keyboard():
     return ReplyKeyboardMarkup(
         [[KeyboardButton('📍 Share my location', request_location=True)]],

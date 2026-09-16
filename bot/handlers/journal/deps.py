@@ -6,6 +6,7 @@ where `patch('bot.handlers.journal.deps.llm_svc')` cannot reach it: the patch su
 handler keeps the real object, and the test passes while hitting a live Anthropic client.
 Attribute access keeps one patch point for every handler.
 """
+from services.account_service import AccountService
 from services.analytics_service import AnalyticsService
 from services.export_service import ExportService
 from services.journal_service import JournalService
@@ -19,3 +20,4 @@ llm_svc = LlmService()
 analytics_svc = AnalyticsService()
 usage_svc = UsageService()
 export_svc = ExportService()
+account_svc = AccountService()

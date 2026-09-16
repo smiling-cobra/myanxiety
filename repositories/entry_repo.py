@@ -23,6 +23,9 @@ class EntryRepository:
             .sort('created_at', 1)
         )
 
+    def delete_for_user(self, telegram_id: int) -> int:
+        return entries_collection().delete_many({'telegram_id': telegram_id}).deleted_count
+
     def average_mood(self, telegram_id: int) -> float:
         pipeline = [
             {'$match': {'telegram_id': telegram_id}},

@@ -19,8 +19,7 @@ PRIVACY_NOTICE = (
     "the bot is actually helping. Those records are deleted after 180 days.\n"
     "• */export* sends you a file of your recent entries, in this chat. Once you have it, "
     "where it goes is up to you.\n"
-    "• There's no self-serve delete yet — it's being built. Until then, ask and "
-    "your data will be removed.\n"
+    "• */delete* permanently removes everything this bot stores about you, in one step.\n"
     "• I'm a journalling tool. I'm not a therapist, a diagnosis, or a crisis service.\n\n"
     "Type */privacy* any time to read this again."
 )
@@ -120,6 +119,7 @@ HELP_MESSAGE = (
     "*/stats* — Show your stats\n"
     "*/summary* — Show your weekly mood summary\n"
     "*/export* — Get a file of your recent entries\n"
+    "*/delete* — Permanently delete everything I store about you\n"
     "*/privacy* — What happens to what you write\n"
     "*/cancel* — End the current session\n\n"
     "———\n"
@@ -218,6 +218,30 @@ EXPORT_CAPTION = (
     "Your journal for the last {days} days — {count} {entries}.\n\n"
     "It's a plain text file you can open on your phone, print, or show to your therapist. "
     "It has everything you wrote in full, so share it only with people you trust."
+)
+
+DELETE_CONFIRM_PROMPT = (
+    "*Delete everything?*\n\n"
+    "This permanently removes everything this bot stores about you: every journal entry, "
+    "your mood scores and tags, your streak, your name and reminder settings, and the "
+    "records of how you've used the bot.\n\n"
+    "It can't be undone. If you want a copy first, choose *No* and send */export*.\n\n"
+    "Two things this can't reach: the messages in this Telegram chat (you can clear the "
+    "chat yourself), and text that was already sent to Anthropic, which is handled under "
+    "Anthropic's own data retention terms."
+)
+
+DELETE_DONE = (
+    "Done. Everything I stored about you has been deleted, and you won't get any more "
+    "reminders from me.\n\n"
+    "If you ever want to start again, send /start. Take care. 🌿"
+)
+
+DELETE_CANCELLED = "Nothing was deleted. Your journal is exactly as it was."
+
+DELETE_FAILED = (
+    "Sorry — I couldn't finish deleting your data just now, so some of it may still be "
+    "stored. Please send /delete again in a few minutes; it's safe to repeat."
 )
 
 CANCEL_MESSAGE = "Take care, {name}. I'm here whenever you need me. 🌿"

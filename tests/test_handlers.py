@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from datetime import datetime
 
 from bot.handlers.journal import (
@@ -829,6 +831,8 @@ class TestHandlersAreCoroutines:
             journal.show_stats,
             journal.show_weekly_summary,
             journal.send_export,
+            journal.request_delete,
+            journal.handle_delete_confirmation,
             journal.handle_guidance_offer,
             journal.cancel,
             journal.recover_state,
@@ -1522,3 +1526,116 @@ class TestSendExport:
             export_svc.build.return_value = self._export()
             await recover_state(update, _context())
         assert update.message.reply_document.called
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — /delete
+#
+# The fan-out is tested against a real (mongomock) database in
+# tests/test_account_service.py. These cover the conversation around it: that
+# nothing is deleted without the exact confirmation, and that the in-memory
+# state the database cannot see is cleared too.
+# ---------------------------------------------------------------------------
+
+class TestDelete:
+    async def test_delete_asks_before_doing_anything(self):
+        from bot.handlers.journal import DELETE_CONFIRM, request_delete
+        from messages.strings import DELETE_CONFIRM_PROMPT
+        update = _update('/delete')
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc:
+            state = await request_delete(update, _context())
+        assert state == DELETE_CONFIRM
+        assert update.message.reply_text.call_args.args[0] == DELETE_CONFIRM_PROMPT
+        account_svc.delete_everything.assert_not_called()
+
+    def test_the_prompt_is_honest_about_what_it_cannot_reach(self):
+        from messages.strings import DELETE_CONFIRM_PROMPT
+        assert 'Telegram chat' in DELETE_CONFIRM_PROMPT
+        assert 'Anthropic' in DELETE_CONFIRM_PROMPT
+        assert '/export' in DELETE_CONFIRM_PROMPT
+
+    async def test_the_confirm_button_deletes_everything(self):
+        from telegram import ReplyKeyboardRemove
+        from telegram.ext import ConversationHandler
+        from bot.handlers.journal import handle_delete_confirmation
+        from bot.keyboards import DELETE_YES
+        from messages.strings import DELETE_DONE
+        update = _update(DELETE_YES)
+        ctx = _context({'name': 'Sam', 'mood_score': 3})
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            account_svc.delete_everything.return_value = {'entries': 4}
+            state = await handle_delete_confirmation(update, ctx)
+        account_svc.delete_everything.assert_called_once_with(12345)
+        assert state == ConversationHandler.END
+        assert update.message.reply_text.call_args.args[0] == DELETE_DONE
+        assert isinstance(update.message.reply_text.call_args.kwargs['reply_markup'], ReplyKeyboardRemove)
+
+    async def test_in_memory_user_data_is_cleared_so_persistence_cannot_restore_it(self):
+        from bot.handlers.journal import handle_delete_confirmation
+        from bot.keyboards import DELETE_YES
+        ctx = _context({'name': 'Sam', 'mood_score': 3})
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            account_svc.delete_everything.return_value = {}
+            await handle_delete_confirmation(_update(DELETE_YES), ctx)
+        assert ctx.user_data == {}
+        ctx.application.drop_user_data.assert_called_once_with(12345)
+
+    async def test_the_deletion_event_is_not_linked_to_the_user(self):
+        from bot.handlers.journal import handle_delete_confirmation
+        from bot.keyboards import DELETE_YES
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            account_svc.delete_everything.return_value = {'entries': 4}
+            await handle_delete_confirmation(_update(DELETE_YES), _context())
+        event, telegram_id = analytics.track.call_args.args
+        assert event == 'account_deleted'
+        assert telegram_id is None
+        assert analytics.track.call_args.kwargs == {'entry_count': 4}
+
+    @pytest.mark.parametrize('reply', ['No, keep my journal', 'yes', 'Yes, delete everything', 'delete'])
+    async def test_anything_but_the_exact_button_deletes_nothing(self, reply):
+        from bot.handlers.journal import handle_delete_confirmation
+        from messages.strings import DELETE_CANCELLED
+        update = _update(reply)
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'), \
+             patch('bot.handlers.journal.deps.user_svc') as user_svc:
+            user_svc.get.return_value = {'name': 'Sam', 'onboarded': True}
+            state = await handle_delete_confirmation(update, _context())
+        account_svc.delete_everything.assert_not_called()
+        assert state == MAIN_MENU
+        assert update.message.reply_text.call_args.args[0] == DELETE_CANCELLED
+
+    async def test_cancelling_mid_onboarding_does_not_offer_a_menu(self):
+        from telegram.ext import ConversationHandler
+        from bot.handlers.journal import handle_delete_confirmation
+        with patch('bot.handlers.journal.deps.account_svc'), \
+             patch('bot.handlers.journal.deps.analytics_svc'), \
+             patch('bot.handlers.journal.deps.user_svc') as user_svc:
+            user_svc.get.return_value = {'acquisition_source': 'direct'}
+            state = await handle_delete_confirmation(_update('no'), _context())
+        assert state == ConversationHandler.END
+
+    async def test_a_failed_deletion_says_so_and_can_be_retried(self):
+        from telegram.ext import ConversationHandler
+        from bot.handlers.journal import handle_delete_confirmation
+        from bot.keyboards import DELETE_YES
+        from messages.strings import DELETE_FAILED
+        from services.account_service import DeletionIncomplete
+        update = _update(DELETE_YES)
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            account_svc.delete_everything.side_effect = DeletionIncomplete(['entries'])
+            state = await handle_delete_confirmation(update, _context())
+        assert state == ConversationHandler.END
+        assert update.message.reply_text.call_args.args[0] == DELETE_FAILED
+        assert '/delete' in DELETE_FAILED
+        analytics.track.assert_not_called()
+
+    def test_privacy_notice_and_help_describe_it(self):
+        from messages.strings import HELP_MESSAGE, PRIVACY_NOTICE
+        assert '/delete' in PRIVACY_NOTICE
+        assert '/delete' in HELP_MESSAGE
+        assert 'no self-serve delete' not in PRIVACY_NOTICE.lower()

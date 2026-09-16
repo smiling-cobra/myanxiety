@@ -63,6 +63,7 @@ class TestTextReachesTheStepWaitingForIt:
         (journal.CHECK_IN_MOOD, '5', 'handle_mood'),
         (journal.CHECK_IN_TEXT, 'a long day at work', 'handle_entry_text'),
         (journal.CHECK_IN_GUIDANCE_OFFER, 'No thanks', 'handle_guidance_offer'),
+        (journal.DELETE_CONFIRM, '🗑 Yes, delete everything', 'handle_delete_confirmation'),
     ])
     def test_state_handler_wins_over_lost_state_recovery(self, conversation, state, text, expected):
         assert _route(conversation, state, text) == expected
@@ -78,6 +79,7 @@ class TestCommandsWorkFromAnywhere:
         ('/stats', 'show_stats'),
         ('/summary', 'show_weekly_summary'),
         ('/export', 'send_export'),
+        ('/delete', 'request_delete'),
     ])
     def test_before_any_conversation(self, conversation, command, expected):
         assert _route(conversation, None, command) == expected
@@ -86,8 +88,12 @@ class TestCommandsWorkFromAnywhere:
         ('/start', 'start'),
         ('/history', 'show_history'),
         ('/export', 'send_export'),
+        ('/delete', 'request_delete'),
         ('/cancel', 'cancel'),
     ])
     @pytest.mark.parametrize('state', [journal.CHECK_IN_MOOD, journal.CHECK_IN_TEXT, journal.ONBOARDING_NAME])
     def test_mid_conversation(self, conversation, state, command, expected):
         assert _route(conversation, state, command) == expected
+
+    def test_a_command_while_confirming_deletion_is_not_a_confirmation(self, conversation):
+        assert _route(conversation, journal.DELETE_CONFIRM, '/history') == 'show_history'
