@@ -69,6 +69,7 @@ the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export
 | `services/` | Business logic — `LlmService`, `UserService`, `JournalService`, `SchedulerService`, `AnalyticsService`, `UsageService`, `ExportService`, `AccountService` |
 | `services/safety.py` | `detect_crisis` — the deterministic crisis lexicon. Pure: no DB, no network, no LLM |
 | `services/tags.py` | Tag normalisation and the canonical tag vocabulary. Pure |
+| `services/export/` | `/export` — `service.py` (load and package), `digest.py` (what the file says), `markdown.py` (how it looks) |
 | `repositories/` | MongoDB data access — `UserRepository`, `EntryRepository`, `StreakRepository`, `EventRepository`, `UsageRepository`, `NotificationRepository`, `ConversationRepository` |
 | `db/db.py` | MongoDB connection and collection accessors |
 | `bot/persistence.py` | MongoDB-backed `BasePersistence` — conversation state and an allowlisted slice of `user_data` |
@@ -96,6 +97,13 @@ The vocabulary is a first cut, to be revised against real tag data.
 It is deliberately rough v0, meant to test whether users bring it into therapy. It makes no LLM call,
 so there is no budget cost, no outage path, and no text the user didn't write. Entries flagged with
 `/flag` (`flagged_for_session`, latest entry only) are listed first.
+
+It is split in three, so the layout can be reworked (Phase 6) without touching the facts.
+`ExportService.build` loads and packages. `build_digest` turns stored entries into a frozen
+`ExportDigest` — local times, tags read through the vocabulary, the flagged subset, mood stats,
+theme counts — and is the only part of the export that knows how an entry is stored.
+`render_markdown` lays that digest out and does no arithmetic. A second format would be a sibling
+renderer over the same digest. Each layer has its own test file.
 
 **Streak logic** (`JournalService._update_streak`): increments if last check-in was yesterday, resets to 1 if gap > 1 day, no-ops if already checked in today.
 
