@@ -5,71 +5,99 @@ from datetime import date
 
 from services.export.digest import DigestEntry, ExportDigest
 
+_LONG_DATE_FORMAT = '%d %b %Y'
+_HEADING_FORMAT = '%a %d %b %Y, %H:%M'
+_CHART_FORMAT = '%a %d %b %H:%M'
+
 _BAR_WIDTH = 10
 _BLOCK_MARKERS = frozenset('#>-*+=`|')
 _PREVIEW_CHARS = 80
+
+_FOOTER = (
+    "_Written by the journal's owner in a private journalling bot. Mood is self-rated from "
+    "1 (worst) to 10 (best) at the time of writing. Themes are tagged automatically and may be "
+    "imperfect. This is not a clinical record._"
+)
 
 
 def render_markdown(digest: ExportDigest) -> str:
     """The export as Markdown.
 
     The file reads top to bottom as a summary a therapist can take in at a
-    glance, then the entries themselves in the order they were lived.
+    glance, then the entries themselves in the order they were lived. Each
+    section ends with a blank line, so sections join without spacing rules.
     """
-    lines = [f"# Journal — {digest.name}" if digest.name else "# Journal", ""]
-    lines.append(
-        f"{_long_date(digest.first_day)} to {_long_date(digest.last_day)} · exported {_long_date(digest.today)}"
-    )
-    if digest.flagged:
-        # First, because it is the point of the file: what the user decided, at
-        # the time, that they wanted to talk about.
-        lines += ["", "## To raise in session", ""]
-        lines += [f"- {_heading(entry)}: {_preview(entry.text)}" for entry in digest.flagged]
-    lines += ["", "## At a glance", ""]
-    lines += _summary(digest)
-    lines += ["", "## Mood by entry", "", "```"]
-    lines += [
-        f"{entry.moment.strftime('%a %d %b %H:%M')}  {_bar(entry.mood)}  {entry.mood}/10"
-        for entry in digest.entries
-    ]
-    lines += ["```", "", "## Entries", ""]
-    for entry in digest.entries:
-        lines += _entry(entry)
-    lines += [
-        "---",
-        "",
-        "_Written by the journal's owner in a private journalling bot. Mood is self-rated from "
-        "1 (worst) to 10 (best) at the time of writing. Themes are tagged automatically and may be "
-        "imperfect. This is not a clinical record._",
-        "",
-    ]
-    return '\n'.join(lines)
+    return '\n'.join([
+        *_header(digest),
+        *_flagged_section(digest.flagged),
+        *_summary_section(digest),
+        *_mood_chart(digest.entries),
+        *_entries_section(digest.entries),
+        *_footer(),
+    ])
 
 
-def _summary(digest: ExportDigest) -> list:
+def _header(digest: ExportDigest) -> list[str]:
+    title = f"# Journal — {digest.name}" if digest.name else "# Journal"
+    span = f"{_long_date(digest.first_day)} to {_long_date(digest.last_day)}"
+    return [title, "", f"{span} · exported {_long_date(digest.today)}", ""]
+
+
+def _flagged_section(flagged: tuple[DigestEntry, ...]) -> list[str]:
+    # First after the header, because it is the point of the file: what the
+    # user decided, at the time, that they wanted to talk about.
+    if not flagged:
+        return []
+    return ["## To raise in session", "", *(f"- {_heading(e)}: {_preview(e.text)}" for e in flagged), ""]
+
+
+def _summary_section(digest: ExportDigest) -> list[str]:
     days, mood, themes = digest.day_count, digest.mood, digest.themes
+    theme_list = ', '.join(f"{tag} ({count})" for tag, count in themes) if themes else "none recorded"
     return [
+        "## At a glance",
+        "",
         f"- **Entries:** {len(digest.entries)} on {days} different {'day' if days == 1 else 'days'}",
         f"- **Mood:** average {mood.average:.1f}/10, lowest {mood.lowest}, highest {mood.highest}",
-        "- **Most common themes:** "
-        + (', '.join(f"{tag} ({count})" for tag, count in themes) if themes else "none recorded"),
+        f"- **Most common themes:** {theme_list}",
+        "",
     ]
 
 
-def _entry(entry: DigestEntry) -> list:
+def _mood_chart(entries: tuple[DigestEntry, ...]) -> list[str]:
+    rows = (f"{e.moment.strftime(_CHART_FORMAT)}  {_bar(e.mood)}  {e.mood}/10" for e in entries)
+    return ["## Mood by entry", "", "```", *rows, "```", ""]
+
+
+def _entries_section(entries: tuple[DigestEntry, ...]) -> list[str]:
+    lines = ["## Entries", ""]
+    for entry in entries:
+        lines += _entry(entry)
+    return lines
+
+
+def _entry(entry: DigestEntry) -> list[str]:
     lines = [f"### {_heading(entry)}", ""]
     if entry.flagged:
         lines += ["🚩 **Flagged to raise in session**", ""]
     if entry.tags:
         lines += [f"Themes: {', '.join(entry.tags)}", ""]
-    # A blockquote keeps the user's words visibly theirs.
-    lines += [f"> {_literal(line)}" if line.strip() else ">" for line in entry.text.splitlines() or ['']]
+    lines += _quote(entry.text)
     lines.append("")
     return lines
 
 
+def _footer() -> list[str]:
+    return ["---", "", _FOOTER, ""]
+
+
+def _quote(text: str) -> list[str]:
+    """The user's text as a blockquote, which keeps their words visibly theirs."""
+    return [f"> {_literal(line)}" if line.strip() else ">" for line in text.splitlines() or ['']]
+
+
 def _heading(entry: DigestEntry) -> str:
-    return f"{entry.moment.strftime('%a %d %b %Y, %H:%M')} — mood {entry.mood}/10"
+    return f"{entry.moment.strftime(_HEADING_FORMAT)} — mood {entry.mood}/10"
 
 
 def _preview(text: str) -> str:
@@ -94,4 +122,4 @@ def _bar(score: int) -> str:
 
 
 def _long_date(d: date) -> str:
-    return d.strftime('%d %b %Y').lstrip('0')
+    return d.strftime(_LONG_DATE_FORMAT).lstrip('0')
