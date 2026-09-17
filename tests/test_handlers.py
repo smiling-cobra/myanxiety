@@ -1459,7 +1459,7 @@ class TestFailedCheckInRefundsTheUnspentCall:
 class TestSendExport:
     @staticmethod
     def _export(count: int = 3):
-        from services.export_service import Export
+        from services.export import Export
         return Export(filename='journal-2026-09-30.md', content=b'# Journal', entry_count=count, flagged_count=0)
 
     async def test_the_file_is_sent_as_a_document(self):
