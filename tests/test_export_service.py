@@ -9,7 +9,8 @@ import pytest
 
 from repositories.entry_repo import EntryRepository
 from repositories.user_repo import UserRepository
-from services.export_service import EXPORT_DAYS, ExportService, render_export
+from services.export import EXPORT_DAYS, ExportService
+from services.export.markdown import render_export
 
 USER = 515151
 OTHER = 616161

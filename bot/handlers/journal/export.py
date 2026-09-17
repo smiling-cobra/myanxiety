@@ -1,7 +1,7 @@
 """The therapy-session surfaces: /export, and /flag to mark an entry for it.
 
 Service calls go through `asyncio.to_thread` — see the package docstring. The
-file is built without a model call; see `services/export_service.py`.
+file is built without a model call; see `services/export/`.
 """
 import asyncio
 
@@ -14,7 +14,7 @@ from bot.handlers.journal.states import MAIN_MENU
 from bot.keyboards import get_main_menu_keyboard
 from messages.strings import EXPORT_CAPTION, EXPORT_EMPTY, FLAG_CLEARED, FLAG_NO_ENTRY, FLAG_SET
 from services import analytics_service as analytics
-from services.export_service import EXPORT_DAYS
+from services.export import EXPORT_DAYS
 from services.time_utils import resolve_timezone, to_local
 
 

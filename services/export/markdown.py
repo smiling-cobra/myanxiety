@@ -1,74 +1,15 @@
-"""The therapist-shareable export, v0.
-
-The product bet this exists to test is narrow: will someone actually take their
-journal into a therapy session? So this is deliberately rough — plain Markdown,
-one file, the last few weeks — and it ships before it is designed, because a
-polished artifact that nobody brings to a session answers nothing. Phase 6
-reworks the format once there is evidence it is used.
-
-Two properties are deliberate rather than rough:
-
-* **No model call.** The file is built from what is stored, deterministically.
-  It costs nothing against the LLM budget, it cannot fail because Anthropic is
-  down, and nothing in it was written by anyone but the user — which matters
-  for a document handed to a clinician.
-* **It is the user's own words in full.** The file goes to them, in their own
-  chat, and where it goes next is their choice. Nothing is summarised away and
-  nothing the user did not write is added beyond counts and dates.
-
-Tags are read through `services.tags`, so the themes line reflects the current
-vocabulary however old the entries are.
-"""
+"""The export laid out as Markdown. Pure: everything it shows is passed in."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date, datetime, tzinfo
 
-from repositories.user_repo import UserRepository
 from services import time_utils
-from services.journal_service import JournalService
 from services.tags import normalise_tags, tag_counts
-
-# Roughly a month: long enough to cover the gap between fortnightly sessions
-# with room to spare, short enough to read in the waiting room.
-EXPORT_DAYS = 30
 
 _TOP_THEMES = 5
 _BAR_WIDTH = 10
 _BLOCK_MARKERS = frozenset('#>-*+=`|')
 _PREVIEW_CHARS = 80
-
-
-@dataclass(frozen=True)
-class Export:
-    filename: str
-    content: bytes
-    entry_count: int
-    flagged_count: int
-
-
-class ExportService:
-    def __init__(self):
-        self._journal = JournalService()
-        self._users = UserRepository()
-
-    def build(self, telegram_id: int) -> Export | None:
-        """The export for the last `EXPORT_DAYS` local days, or None if there is nothing in it."""
-        user = self._users.find(telegram_id) or {}
-        timezone_name = user.get('timezone')
-        entries = self._journal.get_entries_for_days(telegram_id, EXPORT_DAYS, timezone_name)
-        if not entries:
-            return None
-
-        tz = time_utils.resolve_timezone(timezone_name, telegram_id)
-        today = time_utils.now().astimezone(tz).date()
-        markdown = render_export(user.get('name'), entries, tz, today)
-        return Export(
-            filename=f'journal-{today.isoformat()}.md',
-            content=markdown.encode('utf-8'),
-            entry_count=len(entries),
-            flagged_count=sum(1 for e in entries if e.get('flagged_for_session')),
-        )
 
 
 def render_export(name: str | None, entries: list, tz: tzinfo, today: date) -> str:
