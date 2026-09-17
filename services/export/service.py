@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 from repositories.user_repo import UserRepository
 from services import time_utils
-from services.export.markdown import render_export
+from services.export.digest import build_digest
+from services.export.markdown import render_markdown
 from services.journal_service import JournalService
 
 # Roughly a month: long enough to cover the gap between fortnightly sessions
@@ -36,10 +37,10 @@ class ExportService:
 
         tz = time_utils.resolve_timezone(timezone_name, telegram_id)
         today = time_utils.now().astimezone(tz).date()
-        markdown = render_export(user.get('name'), entries, tz, today)
+        digest = build_digest(user.get('name'), entries, tz, today)
         return Export(
             filename=f'journal-{today.isoformat()}.md',
-            content=markdown.encode('utf-8'),
-            entry_count=len(entries),
-            flagged_count=sum(1 for e in entries if e.get('flagged_for_session')),
+            content=render_markdown(digest).encode('utf-8'),
+            entry_count=len(digest.entries),
+            flagged_count=len(digest.flagged),
         )

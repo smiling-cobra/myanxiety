@@ -1,45 +1,40 @@
-"""The export laid out as Markdown. Pure: everything it shows is passed in."""
+"""The export laid out as Markdown. Pure: everything it shows is in the digest."""
 from __future__ import annotations
 
-from datetime import date, datetime, tzinfo
+from datetime import date
 
-from services import time_utils
-from services.tags import normalise_tags, tag_counts
+from services.export.digest import DigestEntry, ExportDigest
 
-_TOP_THEMES = 5
 _BAR_WIDTH = 10
 _BLOCK_MARKERS = frozenset('#>-*+=`|')
 _PREVIEW_CHARS = 80
 
 
-def render_export(name: str | None, entries: list, tz: tzinfo, today: date) -> str:
-    """The export as Markdown. Pure: everything it shows is passed in.
+def render_markdown(digest: ExportDigest) -> str:
+    """The export as Markdown.
 
-    `entries` are expected oldest first, as `JournalService` returns them. The
-    file reads top to bottom as a summary a therapist can take in at a glance,
-    then the entries themselves in the order they were lived.
+    The file reads top to bottom as a summary a therapist can take in at a
+    glance, then the entries themselves in the order they were lived.
     """
-    local = [(time_utils.to_local(e['created_at'], tz), e) for e in entries]
-    first_day, last_day = local[0][0].date(), local[-1][0].date()
-
-    lines = [f"# Journal — {name}" if name else "# Journal", ""]
-    lines.append(f"{_long_date(first_day)} to {_long_date(last_day)} · exported {_long_date(today)}")
-    flagged = [(moment, e) for moment, e in local if e.get('flagged_for_session')]
-    if flagged:
+    lines = [f"# Journal — {digest.name}" if digest.name else "# Journal", ""]
+    lines.append(
+        f"{_long_date(digest.first_day)} to {_long_date(digest.last_day)} · exported {_long_date(digest.today)}"
+    )
+    if digest.flagged:
         # First, because it is the point of the file: what the user decided, at
         # the time, that they wanted to talk about.
         lines += ["", "## To raise in session", ""]
-        lines += [f"- {_heading(moment, e)}: {_preview(e['text'])}" for moment, e in flagged]
+        lines += [f"- {_heading(entry)}: {_preview(entry.text)}" for entry in digest.flagged]
     lines += ["", "## At a glance", ""]
-    lines += _summary(local)
+    lines += _summary(digest)
     lines += ["", "## Mood by entry", "", "```"]
     lines += [
-        f"{moment.strftime('%a %d %b %H:%M')}  {_bar(e['mood_score'])}  {e['mood_score']}/10"
-        for moment, e in local
+        f"{entry.moment.strftime('%a %d %b %H:%M')}  {_bar(entry.mood)}  {entry.mood}/10"
+        for entry in digest.entries
     ]
     lines += ["```", "", "## Entries", ""]
-    for moment, entry in local:
-        lines += _entry(moment, entry)
+    for entry in digest.entries:
+        lines += _entry(entry)
     lines += [
         "---",
         "",
@@ -51,33 +46,30 @@ def render_export(name: str | None, entries: list, tz: tzinfo, today: date) -> s
     return '\n'.join(lines)
 
 
-def _summary(local: list) -> list:
-    scores = [e['mood_score'] for _, e in local]
-    days = len({moment.date() for moment, _ in local})
-    themes = tag_counts((e for _, e in local), _TOP_THEMES)
+def _summary(digest: ExportDigest) -> list:
+    days, mood, themes = digest.day_count, digest.mood, digest.themes
     return [
-        f"- **Entries:** {len(local)} on {days} different {'day' if days == 1 else 'days'}",
-        f"- **Mood:** average {sum(scores) / len(scores):.1f}/10, lowest {min(scores)}, highest {max(scores)}",
+        f"- **Entries:** {len(digest.entries)} on {days} different {'day' if days == 1 else 'days'}",
+        f"- **Mood:** average {mood.average:.1f}/10, lowest {mood.lowest}, highest {mood.highest}",
         "- **Most common themes:** "
         + (', '.join(f"{tag} ({count})" for tag, count in themes) if themes else "none recorded"),
     ]
 
 
-def _entry(moment: datetime, entry: dict) -> list:
-    lines = [f"### {_heading(moment, entry)}", ""]
-    if entry.get('flagged_for_session'):
+def _entry(entry: DigestEntry) -> list:
+    lines = [f"### {_heading(entry)}", ""]
+    if entry.flagged:
         lines += ["🚩 **Flagged to raise in session**", ""]
-    tags = normalise_tags(entry.get('tags') or [])
-    if tags:
-        lines += [f"Themes: {', '.join(tags)}", ""]
+    if entry.tags:
+        lines += [f"Themes: {', '.join(entry.tags)}", ""]
     # A blockquote keeps the user's words visibly theirs.
-    lines += [f"> {_literal(line)}" if line.strip() else ">" for line in entry['text'].splitlines() or ['']]
+    lines += [f"> {_literal(line)}" if line.strip() else ">" for line in entry.text.splitlines() or ['']]
     lines.append("")
     return lines
 
 
-def _heading(moment: datetime, entry: dict) -> str:
-    return f"{moment.strftime('%a %d %b %Y, %H:%M')} — mood {entry['mood_score']}/10"
+def _heading(entry: DigestEntry) -> str:
+    return f"{entry.moment.strftime('%a %d %b %Y, %H:%M')} — mood {entry.mood}/10"
 
 
 def _preview(text: str) -> str:

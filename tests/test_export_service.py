@@ -10,7 +10,8 @@ import pytest
 from repositories.entry_repo import EntryRepository
 from repositories.user_repo import UserRepository
 from services.export import EXPORT_DAYS, ExportService
-from services.export.markdown import render_export
+from services.export.digest import build_digest
+from services.export.markdown import render_markdown
 
 USER = 515151
 OTHER = 616161
@@ -91,7 +92,7 @@ class TestBuild:
 
 
 def _render(entries, tz=UTC, name='Sam') -> str:
-    return render_export(name, entries, tz, date(2026, 9, 30))
+    return render_markdown(build_digest(name, entries, tz, date(2026, 9, 30)))
 
 
 def _e(text='x', mood=5, when=NOW, tags=None, flagged=None) -> dict:
