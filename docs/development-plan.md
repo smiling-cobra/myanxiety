@@ -131,6 +131,8 @@ Once export v0 exists and the tag corpus is cleaner, improve the export into a c
 
 This phase should be informed by real usage rather than assumptions. It depends on instrumentation, clean tags, and early export behavior already being in place.
 
+_Status: complete, as a first cut. The export now opens with a brief meant to be read in about ninety seconds (flagged items, days written, mood, themes with their average mood, lowest points, mood by day), followed by the entries in full, grouped by day. Onboarding and help text say what the bot is for and what the export contains. Alongside this, the first entry of a local day is the daily check-in, and later entries that day are notes: same safety path, no LLM reply. Users who have already checked in get no reminder. The therapist conversations in [engineering-plan.md](engineering-plan.md) §8 have not happened yet, and should shape the next revision of the layout._
+
 Primary anchors:
 
 - [messages/strings.py](../messages/strings.py)
