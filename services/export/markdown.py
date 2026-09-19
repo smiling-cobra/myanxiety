@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from services.export.digest import DigestEntry, ExportDigest
+from services.export.digest import DayDigest, DigestEntry, ExportDigest
 
 _LONG_DATE_FORMAT = '%d %b %Y'
 _HEADING_FORMAT = '%a %d %b %Y, %H:%M'
-_CHART_FORMAT = '%a %d %b %H:%M'
+_DAY_HEADING_FORMAT = '%a %d %b %Y'
+_CHART_FORMAT = '%a %d %b'
+_TIME_FORMAT = '%H:%M'
 
 _BAR_WIDTH = 10
 _BLOCK_MARKERS = frozenset('#>-*+=`|')
@@ -23,16 +25,20 @@ _FOOTER = (
 def render_markdown(digest: ExportDigest) -> str:
     """The export as Markdown.
 
-    The file reads top to bottom as a summary a therapist can take in at a
-    glance, then the entries themselves in the order they were lived. Each
-    section ends with a blank line, so sections join without spacing rules.
+    Two parts. The brief — everything above "Entries" — is meant to be read
+    in about ninety seconds before a session: what the user wants to raise,
+    the shape of the month, the themes and how heavy each one sat, the lowest
+    points, and the mood day by day. The entries follow in full, grouped by
+    day, for whatever the brief makes someone want to look up. Each section
+    ends with a blank line, so sections join without spacing rules.
     """
     return '\n'.join([
         *_header(digest),
         *_flagged_section(digest.flagged),
         *_summary_section(digest),
-        *_mood_chart(digest.entries),
-        *_entries_section(digest.entries),
+        *_lowest_section(digest.lowest),
+        *_mood_chart(digest.days),
+        *_entries_section(digest.days),
         *_footer(),
     ])
 
@@ -48,36 +54,59 @@ def _flagged_section(flagged: tuple[DigestEntry, ...]) -> list[str]:
     # user decided, at the time, that they wanted to talk about.
     if not flagged:
         return []
-    return ["## To raise in session", "", *(f"- {_heading(e)}: {_preview(e.text)}" for e in flagged), ""]
+    return ["## To raise in session", "", *(_preview_line(e) for e in flagged), ""]
 
 
 def _summary_section(digest: ExportDigest) -> list[str]:
-    days, mood, themes = digest.day_count, digest.mood, digest.themes
-    theme_list = ', '.join(f"{tag} ({count})" for tag, count in themes) if themes else "none recorded"
-    return [
+    days, entries, mood = digest.day_count, len(digest.entries), digest.mood
+    lines = [
         "## At a glance",
         "",
-        f"- **Entries:** {len(digest.entries)} on {days} different {'day' if days == 1 else 'days'}",
+        f"- **Wrote on:** {days} of the last {digest.window_days} days "
+        f"({entries} {'entry' if entries == 1 else 'entries'})",
         f"- **Mood:** average {mood.average:.1f}/10, lowest {mood.lowest}, highest {mood.highest}",
-        f"- **Most common themes:** {theme_list}",
-        "",
     ]
+    if digest.themes:
+        lines.append("- **Most common themes:**")
+        lines += [
+            f"  - {t.tag} — {t.count} {'entry' if t.count == 1 else 'entries'}, "
+            f"average mood {t.average_mood:.1f}"
+            for t in digest.themes
+        ]
+    else:
+        lines.append("- **Most common themes:** none recorded")
+    return [*lines, ""]
 
 
-def _mood_chart(entries: tuple[DigestEntry, ...]) -> list[str]:
-    rows = (f"{e.moment.strftime(_CHART_FORMAT)}  {_bar(e.mood)}  {e.mood}/10" for e in entries)
-    return ["## Mood by entry", "", "```", *rows, "```", ""]
+def _lowest_section(lowest: tuple[DigestEntry, ...]) -> list[str]:
+    if not lowest:
+        return []
+    return ["## Lowest points", "", *(_preview_line(e) for e in lowest), ""]
 
 
-def _entries_section(entries: tuple[DigestEntry, ...]) -> list[str]:
+def _mood_chart(days: tuple[DayDigest, ...]) -> list[str]:
+    rows = (f"{d.day.strftime(_CHART_FORMAT)}  {_bar(d.mood.average)}  {_day_score(d)}" for d in days)
+    return ["## Mood by day", "", "```", *rows, "```", ""]
+
+
+def _day_score(day: DayDigest) -> str:
+    """One entry's score, or a day's range when it has several."""
+    lowest, highest = day.mood.lowest, day.mood.highest
+    score = f"{lowest}/10" if lowest == highest else f"{lowest}–{highest}/10"
+    return score if len(day.entries) == 1 else f"{score} · {len(day.entries)} entries"
+
+
+def _entries_section(days: tuple[DayDigest, ...]) -> list[str]:
     lines = ["## Entries", ""]
-    for entry in entries:
-        lines += _entry(entry)
+    for day in days:
+        lines += [f"### {day.day.strftime(_DAY_HEADING_FORMAT)}", ""]
+        for entry in day.entries:
+            lines += _entry(entry)
     return lines
 
 
 def _entry(entry: DigestEntry) -> list[str]:
-    lines = [f"### {_heading(entry)}", ""]
+    lines = [f"**{entry.moment.strftime(_TIME_FORMAT)} — mood {entry.mood}/10**", ""]
     if entry.flagged:
         lines += ["🚩 **Flagged to raise in session**", ""]
     if entry.tags:
@@ -96,8 +125,8 @@ def _quote(text: str) -> list[str]:
     return [f"> {_literal(line)}" if line.strip() else ">" for line in text.splitlines() or ['']]
 
 
-def _heading(entry: DigestEntry) -> str:
-    return f"{entry.moment.strftime(_HEADING_FORMAT)} — mood {entry.mood}/10"
+def _preview_line(entry: DigestEntry) -> str:
+    return f"- {entry.moment.strftime(_HEADING_FORMAT)} — mood {entry.mood}/10: {_preview(entry.text)}"
 
 
 def _preview(text: str) -> str:
@@ -116,8 +145,9 @@ def _literal(line: str) -> str:
     return line
 
 
-def _bar(score: int) -> str:
-    filled = max(0, min(_BAR_WIDTH, score))
+def _bar(score: float) -> str:
+    # Half up, not Python's round-half-to-even, so a 4.5 day does not draw as a 4.
+    filled = max(0, min(_BAR_WIDTH, int(score + 0.5)))
     return '▓' * filled + '░' * (_BAR_WIDTH - filled)
 
 

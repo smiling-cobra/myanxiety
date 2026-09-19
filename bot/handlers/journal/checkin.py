@@ -11,6 +11,13 @@ mood score or the text itself. Nothing downstream of a `try` is a guarantee.
 
 *The entry is saved even when the LLM is not called.* A user at their daily
 Anthropic ceiling loses the written reflection, never the thing they wrote.
+
+The first entry of the user's local day is the *daily check-in*: it carries the
+streak and the written reflection. Any later entry that day is a *note* — the
+same mood, text and safety path, acknowledged with a fixed line instead of a
+reflection. There is no limit on notes: the moment someone most needs to write
+is often the second time that day, and the crisis lexicon cannot read text that
+was never written.
 """
 import asyncio
 import logging
@@ -40,6 +47,7 @@ from messages.strings import (
     GUIDANCE_OFFER_VERY_LOW,
     GUIDANCE_STATIC_FALLBACK,
     MOOD_LOST,
+    NOTE_SAVED,
     WRONG_MOOD,
 )
 from services import analytics_service as analytics
@@ -47,8 +55,13 @@ from services.safety import detect_crisis
 
 logger = logging.getLogger(__name__)
 
-# One check-in spends two Anthropic calls: tag extraction and the reply.
+# One check-in spends two Anthropic calls: tag extraction and the reply. A note
+# spends only the first, but whether an entry is a note is not known until it is
+# saved, so both are reserved and the reply is handed back for a note.
 _CHECK_IN_LLM_CALLS = 2
+
+_DAILY = 'daily'
+_NOTE = 'note'
 
 _MOOD_TRIGGER = 'mood'
 _CONTENT_TRIGGER = 'content'
@@ -110,6 +123,20 @@ async def _send_crisis_resources(update: Update, telegram_id: int, triggers: lis
     )
 
 
+async def _completion_message(
+    telegram_id: int, name: str, first_of_day: bool, llm_response: str | None, streak: int
+) -> str:
+    """The reply to a saved entry: a note's acknowledgement, or the check-in with or without a reflection."""
+    if not first_of_day:
+        return NOTE_SAVED.format(name=escape_md(name))
+    if llm_response is None:
+        await asyncio.to_thread(
+            deps.analytics_svc.track, analytics.LLM_BUDGET_EXCEEDED, telegram_id, surface='check_in'
+        )
+        return CHECK_IN_DONE_BRIEF.format(name=escape_md(name), streak=streak)
+    return CHECK_IN_DONE.format(name=escape_md(name), llm_response=escape_md(llm_response), streak=streak)
+
+
 async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
     telegram_id = update.effective_user.id
@@ -136,11 +163,11 @@ async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     try:
         tags = await asyncio.to_thread(deps.llm_svc.extract_tags, text) if llm_allowed else []
-        await asyncio.to_thread(deps.journal_svc.save_entry, telegram_id, mood_score, text, tags)
+        first_of_day = await asyncio.to_thread(deps.journal_svc.save_entry, telegram_id, mood_score, text, tags)
         stats = await asyncio.to_thread(deps.journal_svc.get_stats, telegram_id)
         llm_response = (
             await asyncio.to_thread(deps.llm_svc.get_empathetic_response, mood_score, text)
-            if llm_allowed else None
+            if llm_allowed and first_of_day else None
         )
     except Exception:
         logger.exception('Check-in failed for user %s', telegram_id)
@@ -157,21 +184,18 @@ async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text(ERROR_GENERIC, reply_markup=get_main_menu_keyboard())
         return MAIN_MENU
 
-    if llm_response is None:
-        await asyncio.to_thread(
-            deps.analytics_svc.track, analytics.LLM_BUDGET_EXCEEDED, telegram_id, surface='check_in'
-        )
-        body = CHECK_IN_DONE_BRIEF.format(name=escape_md(name), streak=stats['streak'])
-    else:
-        body = CHECK_IN_DONE.format(
-            name=escape_md(name), llm_response=escape_md(llm_response), streak=stats['streak']
-        )
+    if not first_of_day and llm_allowed:
+        # A note was never going to get a reply, so its reserved call is handed back.
+        await asyncio.to_thread(deps.usage_svc.refund, telegram_id, 1)
 
-    await update.message.reply_text(body, reply_markup=get_main_menu_keyboard(), parse_mode='Markdown')
+    body = await _completion_message(telegram_id, name, first_of_day, llm_response, stats['streak'])
+    # Whichever kind this was, the next entry today is a note.
+    await update.message.reply_text(body, reply_markup=get_main_menu_keyboard(checked_in=True), parse_mode='Markdown')
     await asyncio.to_thread(
         deps.analytics_svc.track,
         analytics.CHECK_IN_COMPLETED,
         telegram_id,
+        kind=_DAILY if first_of_day else _NOTE,
         mood_score=mood_score,
         text_length=len(text),
         tag_count=len(tags),
@@ -214,7 +238,7 @@ async def handle_guidance_offer(update: Update, context: ContextTypes.DEFAULT_TY
 
     if update.message.text != GUIDANCE_YES:
         await asyncio.to_thread(deps.analytics_svc.track, analytics.GUIDANCE_DECLINED, telegram_id)
-        await update.message.reply_text(GUIDANCE_DECLINED, reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(GUIDANCE_DECLINED, reply_markup=get_main_menu_keyboard(checked_in=True))
         return MAIN_MENU
 
     entry_text = context.user_data.get('entry_text', '')
@@ -238,5 +262,5 @@ async def handle_guidance_offer(update: Update, context: ContextTypes.DEFAULT_TY
         )
         guidance = GUIDANCE_STATIC_FALLBACK
 
-    await update.message.reply_text(guidance, reply_markup=get_main_menu_keyboard())
+    await update.message.reply_text(guidance, reply_markup=get_main_menu_keyboard(checked_in=True))
     return MAIN_MENU

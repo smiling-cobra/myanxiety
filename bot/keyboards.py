@@ -1,6 +1,7 @@
 from telegram import KeyboardButton, ReplyKeyboardMarkup
 
 CHECK_IN = '📝 Check In'
+ADD_NOTE = '🗒 Add a note'
 HISTORY = '📖 History'
 STATS = '📊 Stats'
 WEEKLY_SUMMARY = '📈 Weekly Summary'
@@ -10,12 +11,18 @@ BACK = '🔙 Back'
 
 # The buttons a main-menu keyboard can produce. A keyboard outlives the
 # conversation that sent it, so a recovered session needs to recognise them.
-MAIN_MENU_CHOICES = (CHECK_IN, HISTORY, STATS, WEEKLY_SUMMARY, EXPORT, HELP)
+MAIN_MENU_CHOICES = (CHECK_IN, ADD_NOTE, HISTORY, STATS, WEEKLY_SUMMARY, EXPORT, HELP)
+
+# Both labels start an entry. The label is a hint about which kind it will be,
+# not the decision: a keyboard does not change at local midnight, so the one
+# on screen can still say "Add a note" the next morning. The entry's kind is
+# settled when it is saved.
+ENTRY_CHOICES = (CHECK_IN, ADD_NOTE)
 
 
-def get_main_menu_keyboard():
+def get_main_menu_keyboard(checked_in: bool = False):
     return ReplyKeyboardMarkup(
-        [[CHECK_IN], [HISTORY, STATS], [WEEKLY_SUMMARY, EXPORT], [HELP]],
+        [[ADD_NOTE if checked_in else CHECK_IN], [HISTORY, STATS], [WEEKLY_SUMMARY, EXPORT], [HELP]],
         resize_keyboard=True
     )
 

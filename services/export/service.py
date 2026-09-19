@@ -37,7 +37,7 @@ class ExportService:
 
         tz = time_utils.resolve_timezone(timezone_name, telegram_id)
         today = time_utils.now().astimezone(tz).date()
-        digest = build_digest(user.get('name'), entries, tz, today)
+        digest = build_digest(user.get('name'), entries, tz, today, EXPORT_DAYS)
         return Export(
             filename=f'journal-{today.isoformat()}.md',
             content=render_markdown(digest).encode('utf-8'),

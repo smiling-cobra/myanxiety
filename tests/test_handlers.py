@@ -641,6 +641,16 @@ class TestPrivacyNotice:
         from messages.strings import HELP_MESSAGE
         assert '/privacy' in HELP_MESSAGE
 
+    def test_the_notice_says_the_export_is_shared_only_by_the_user(self):
+        from messages.strings import PRIVACY_NOTICE
+        assert 'nobody sees it unless you send it to them yourself' in PRIVACY_NOTICE
+
+    def test_welcome_makes_no_treatment_claim(self):
+        """Copy decides whether this reads as a wellness tool or a medical one."""
+        from messages.strings import ONBOARDING_WELCOME
+        for claim in ('help you', 'treat', 'heal', 'therapy for', 'anxiety'):
+            assert claim not in ONBOARDING_WELCOME.lower()
+
     def test_welcome_makes_no_bare_privacy_claim(self):
         """The bot forwards entry text to a third-party API, so 'private
         anxiety journal' was an inaccurate opening line, not just a legal gap."""
@@ -786,6 +796,14 @@ class TestRecoverState:
         the button must work on the first tap, not the second."""
         from bot.keyboards import CHECK_IN
         update = _update(CHECK_IN)
+        with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            self._onboarded(mock_svc)
+            state = await recover_state(update, _context())
+        assert state == CHECK_IN_MOOD
+
+    async def test_a_stale_add_a_note_tap_is_acted_on_immediately(self):
+        from bot.keyboards import ADD_NOTE
+        update = _update(ADD_NOTE)
         with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
             self._onboarded(mock_svc)
             state = await recover_state(update, _context())
@@ -1042,6 +1060,32 @@ class TestTherapyCohortQuestion:
             }
             await handle_therapy(update, _context())
         assert '21:30' in update.message.reply_text.call_args.args[0]
+
+    async def _closing_message(self, answer: str, timezone: str = 'Europe/London') -> str:
+        update = _update(answer)
+        with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            mock_svc.get.return_value = {'name': 'Alice', 'timezone': timezone, 'reminder_time': '09:00'}
+            await handle_therapy(update, _context())
+        return update.message.reply_text.call_args.args[0]
+
+    async def test_someone_in_therapy_is_told_how_to_use_the_export(self):
+        from messages.strings import ONBOARDING_THERAPY_TIP
+        assert ONBOARDING_THERAPY_TIP in await self._closing_message('Yes')
+
+    async def test_everyone_else_gets_the_plain_closing_message(self):
+        from messages.strings import ONBOARDING_THERAPY_TIP
+        for answer in ('No', 'Prefer not to say', 'why do you ask'):
+            assert ONBOARDING_THERAPY_TIP not in await self._closing_message(answer)
+
+    async def test_the_closing_message_explains_check_ins_notes_flag_and_export(self):
+        text = await self._closing_message('No')
+        for phrase in ('*daily check-in*', '*note*', '*/flag*', '*/export*'):
+            assert phrase in text
+
+    async def test_an_underscore_in_the_timezone_is_escaped(self):
+        """The message is sent as Markdown; a bare underscore in America/New_York
+        opens an italic span Telegram cannot close, and the send is rejected."""
+        assert 'America/New\\_York' in await self._closing_message('No', timezone='America/New_York')
 
 
 # ---------------------------------------------------------------------------
@@ -1684,3 +1728,171 @@ class TestToggleFlag:
         from messages.strings import CHECK_IN_DONE, CHECK_IN_DONE_BRIEF
         assert '/flag' in CHECK_IN_DONE
         assert '/flag' in CHECK_IN_DONE_BRIEF
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — the daily check-in and later notes
+#
+# The first entry of the local day is the check-in; any later one is a note.
+# Notes are never refused — only the reply and the streak line are dropped —
+# so everything that protects a user still runs on them.
+# ---------------------------------------------------------------------------
+
+class TestNotes:
+    @staticmethod
+    def _tracked(mock_analytics) -> dict:
+        return {c.args[0]: c.kwargs for c in mock_analytics.track.call_args_list}
+
+    async def _run(self, mood_score: int = 6, text: str = 'Something came up', first_of_day: bool = False):
+        ctx = _context({'name': 'Alice', 'mood_score': mood_score})
+        update = _update(text)
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            usage.consume_llm.return_value = True
+            mock_svc.save_entry.return_value = first_of_day
+            mock_svc.get_stats.return_value = {'streak': 3, 'total': 5, 'avg_mood': mood_score}
+            mock_llm.extract_tags.return_value = ['work']
+            mock_llm.get_empathetic_response.return_value = 'A reflection.'
+            state = await handle_entry_text(update, ctx)
+        sent = [c.args[0] for c in update.message.reply_text.call_args_list]
+        return state, sent, usage, analytics, mock_svc, mock_llm
+
+    async def test_a_note_is_saved_with_its_tags(self):
+        _, _, _, _, mock_svc, _ = await self._run()
+        assert mock_svc.save_entry.call_args.args[3] == ['work']
+
+    async def test_a_note_gets_no_reflection(self):
+        _, sent, _, _, _, mock_llm = await self._run()
+        mock_llm.get_empathetic_response.assert_not_called()
+        assert 'A reflection.' not in sent[-1]
+
+    async def test_a_note_is_acknowledged_without_a_streak_line(self):
+        from messages.strings import NOTE_SAVED
+        _, sent, _, _, _, _ = await self._run()
+        assert sent[-1] == NOTE_SAVED.format(name='Alice')
+        assert 'in a row' not in sent[-1]
+
+    async def test_a_note_hands_back_the_reply_call(self):
+        """Both calls are reserved before the save; only the tag call was spent."""
+        _, _, usage, _, _, _ = await self._run()
+        usage.refund.assert_called_once()
+        assert usage.refund.call_args.args[1] == 1
+
+    async def test_a_note_at_the_ceiling_refunds_nothing(self):
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            usage.consume_llm.return_value = False
+            mock_svc.save_entry.return_value = False
+            mock_svc.get_stats.return_value = {'streak': 3, 'total': 5, 'avg_mood': 6}
+            await handle_entry_text(_update('x'), ctx)
+        usage.refund.assert_not_called()
+
+    async def test_the_daily_check_in_still_gets_its_reflection(self):
+        _, sent, usage, _, _, mock_llm = await self._run(first_of_day=True)
+        mock_llm.get_empathetic_response.assert_called_once()
+        assert 'A reflection.' in sent[-1]
+        usage.refund.assert_not_called()
+
+    async def test_crisis_resources_fire_on_a_note(self):
+        _, sent, _, _, _, _ = await self._run(mood_score=7, text='I want to die')
+        assert GUIDANCE_CRISIS_RESOURCES in sent
+
+    async def test_a_low_mood_note_still_offers_guidance(self):
+        state, _, _, _, _, _ = await self._run(mood_score=3)
+        assert state == CHECK_IN_GUIDANCE_OFFER
+
+    async def test_the_event_says_which_kind(self):
+        _, _, _, note_analytics, _, _ = await self._run()
+        _, _, _, daily_analytics, _, _ = await self._run(first_of_day=True)
+        assert self._tracked(note_analytics)['check_in_completed']['kind'] == 'note'
+        assert self._tracked(daily_analytics)['check_in_completed']['kind'] == 'daily'
+
+    async def test_second_entry_of_the_day_is_a_note_end_to_end(self):
+        """Through the real JournalService: the streak store decides, not a mock."""
+        from messages.strings import NOTE_SAVED
+        replies = []
+        with patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'A reflection.'
+            for text in ('morning', 'afternoon'):
+                update = _update(text)
+                await handle_entry_text(update, _context({'name': 'Alice', 'mood_score': 6}))
+                replies.append(update.message.reply_text.call_args.args[0])
+        assert 'A reflection.' in replies[0]
+        assert replies[1] == NOTE_SAVED.format(name='Alice')
+        assert mock_llm.get_empathetic_response.call_count == 1
+
+
+class TestCheckInPromptAfterCheckingIn:
+    async def _prompt(self, checked_in: bool, label: str = '📝 Check In') -> str:
+        from bot.handlers.journal import handle_main_menu
+        update = _update(label)
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc:
+            mock_svc.checked_in_today.return_value = checked_in
+            state = await handle_main_menu(update, _context({'name': 'Sam'}))
+        assert state == CHECK_IN_MOOD
+        return update.message.reply_text.call_args.args[0]
+
+    async def test_first_of_the_day_asks_for_the_check_in(self):
+        from messages.strings import CHECK_IN_MOOD_PROMPT
+        assert await self._prompt(False) == CHECK_IN_MOOD_PROMPT.format(name='Sam')
+
+    async def test_later_in_the_day_offers_a_note(self):
+        from messages.strings import NOTE_MOOD_PROMPT
+        assert await self._prompt(True) == NOTE_MOOD_PROMPT.format(name='Sam')
+
+    async def test_a_stale_add_a_note_label_still_starts_the_days_check_in(self):
+        """The keyboard does not change at midnight. The prompt goes by the day, not the label."""
+        from bot.keyboards import ADD_NOTE
+        from messages.strings import CHECK_IN_MOOD_PROMPT
+        assert await self._prompt(False, label=ADD_NOTE) == CHECK_IN_MOOD_PROMPT.format(name='Sam')
+
+
+def _entry_button(reply_markup) -> str:
+    """The label on the first row of a main-menu keyboard."""
+    return reply_markup.keyboard[0][0].text
+
+
+class TestMenuButtonLabel:
+    async def _stats_button(self, **journal_svc) -> str:
+        update = _update('')
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.user_svc'), \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            mock_svc.get_stats.return_value = {'streak': 0, 'total': 0, 'avg_mood': None}
+            mock_svc.configure_mock(**journal_svc)
+            await show_stats(update, _context({'name': 'Sam'}))
+        return _entry_button(update.message.reply_text.call_args.kwargs['reply_markup'])
+
+    async def test_check_in_before_todays_check_in(self):
+        from bot.keyboards import CHECK_IN
+        assert await self._stats_button(**{'checked_in_today.return_value': False}) == CHECK_IN
+
+    async def test_add_a_note_after_todays_check_in(self):
+        from bot.keyboards import ADD_NOTE
+        assert await self._stats_button(**{'checked_in_today.return_value': True}) == ADD_NOTE
+
+    async def test_a_failed_read_falls_back_to_check_in(self):
+        from bot.keyboards import CHECK_IN
+        assert await self._stats_button(**{'checked_in_today.side_effect': RuntimeError('mongo down')}) == CHECK_IN
+
+    @pytest.mark.parametrize('first_of_day', [True, False])
+    async def test_a_completed_entry_returns_add_a_note(self, first_of_day):
+        from bot.keyboards import ADD_NOTE
+        update = _update('A quiet day')
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.analytics_svc'), \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            usage.consume_llm.return_value = True
+            mock_svc.save_entry.return_value = first_of_day
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 7}
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'A reflection.'
+            await handle_entry_text(update, _context({'name': 'Alice', 'mood_score': 7}))
+        mock_svc.checked_in_today.assert_not_called()
+        assert _entry_button(update.message.reply_text.call_args.kwargs['reply_markup']) == ADD_NOTE

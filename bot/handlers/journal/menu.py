@@ -4,15 +4,17 @@ from telegram import ReplyKeyboardRemove, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.handlers.journal import deps
+from bot.handlers.journal.main_menu import main_menu_keyboard
 from bot.handlers.journal.onboarding import start
 from bot.handlers.journal.states import CHECK_IN_MOOD, MAIN_MENU
 from bot.handlers.journal.export import send_export
 from bot.handlers.journal.views import show_history, show_stats, show_weekly_summary
 from bot.keyboards import (
-    CHECK_IN, EXPORT, HELP, HISTORY, MAIN_MENU_CHOICES, STATS, WEEKLY_SUMMARY,
-    get_main_menu_keyboard, get_mood_keyboard,
+    ENTRY_CHOICES, EXPORT, HELP, HISTORY, MAIN_MENU_CHOICES, STATS, WEEKLY_SUMMARY, get_mood_keyboard,
 )
-from messages.strings import CANCEL_MESSAGE, CHECK_IN_MOOD_PROMPT, HELP_MESSAGE, MAIN_MENU_MESSAGE
+from messages.strings import (
+    CANCEL_MESSAGE, CHECK_IN_MOOD_PROMPT, HELP_MESSAGE, MAIN_MENU_MESSAGE, NOTE_MOOD_PROMPT,
+)
 
 
 def _name(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -23,11 +25,14 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     choice = update.message.text
     name = _name(context)
 
-    if choice == CHECK_IN:
-        await update.message.reply_text(
-            CHECK_IN_MOOD_PROMPT.format(name=name),
-            reply_markup=get_mood_keyboard()
-        )
+    if choice in ENTRY_CHOICES:
+        # Wording only, and never from the label that was tapped: a keyboard can
+        # outlive the day it was sent on. Whether the entry counts as the daily
+        # check-in or a note is decided when it is saved, which may fall after
+        # local midnight.
+        noted = await asyncio.to_thread(deps.journal_svc.checked_in_today, update.effective_user.id)
+        prompt = NOTE_MOOD_PROMPT if noted else CHECK_IN_MOOD_PROMPT
+        await update.message.reply_text(prompt.format(name=name), reply_markup=get_mood_keyboard())
         return CHECK_IN_MOOD
 
     if choice == HISTORY:
@@ -73,7 +78,7 @@ async def recover_state(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     await update.message.reply_text(
         MAIN_MENU_MESSAGE.format(name=user['name']),
-        reply_markup=get_main_menu_keyboard(),
+        reply_markup=await main_menu_keyboard(telegram_id),
     )
     return MAIN_MENU
 

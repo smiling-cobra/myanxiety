@@ -11,7 +11,7 @@ from telegram.ext import ContextTypes
 from bot.handlers.journal import deps
 from bot.handlers.journal.errors import service_errors
 from bot.handlers.journal.states import MAIN_MENU
-from bot.keyboards import get_main_menu_keyboard
+from bot.handlers.journal.main_menu import main_menu_keyboard
 from messages.strings import EXPORT_CAPTION, EXPORT_EMPTY, FLAG_CLEARED, FLAG_NO_ENTRY, FLAG_SET
 from services import analytics_service as analytics
 from services.export import EXPORT_DAYS
@@ -37,7 +37,9 @@ async def send_export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     if export is None:
         await update.message.reply_text(
-            EXPORT_EMPTY.format(days=EXPORT_DAYS), parse_mode='Markdown', reply_markup=get_main_menu_keyboard()
+            EXPORT_EMPTY.format(days=EXPORT_DAYS),
+            parse_mode='Markdown',
+            reply_markup=await main_menu_keyboard(telegram_id),
         )
         return MAIN_MENU
 
@@ -45,7 +47,7 @@ async def send_export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         document=export.content,
         filename=export.filename,
         caption=EXPORT_CAPTION.format(days=EXPORT_DAYS, count=count, entries='entry' if count == 1 else 'entries'),
-        reply_markup=get_main_menu_keyboard(),
+        reply_markup=await main_menu_keyboard(telegram_id),
     )
     return MAIN_MENU
 
@@ -56,7 +58,9 @@ async def toggle_flag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     entry = await asyncio.to_thread(deps.journal_svc.toggle_session_flag, telegram_id)
 
     if entry is None:
-        await update.message.reply_text(FLAG_NO_ENTRY, parse_mode='Markdown', reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(
+            FLAG_NO_ENTRY, parse_mode='Markdown', reply_markup=await main_menu_keyboard(telegram_id)
+        )
         return MAIN_MENU
 
     flagged = entry['flagged_for_session']
@@ -68,6 +72,6 @@ async def toggle_flag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await update.message.reply_text(
         (FLAG_SET if flagged else FLAG_CLEARED).format(date=date),
         parse_mode='Markdown',
-        reply_markup=get_main_menu_keyboard(),
+        reply_markup=await main_menu_keyboard(telegram_id),
     )
     return MAIN_MENU
