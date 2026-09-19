@@ -64,7 +64,7 @@ ONBOARDING_DONE = (
     "You're all set, {name}! ✅\n\n"
     "I'll remind you every day at {reminder_time} ({timezone}). That's your *daily check-in*: "
     "a mood rating, a few lines about your day, and a reply from me.\n\n"
-    "If something comes up later the same day, tap *Check In* again to add a *note* to that day.\n\n"
+    "Once you've checked in, the button becomes *Add a note*: a *note* for anything that comes up later that day.\n\n"
     "• */flag* marks your latest entry as something to raise in your next session\n"
     "• */export* sends you a summary of your last 30 days\n\n"
     "{therapy_tip}"
@@ -142,7 +142,7 @@ STATS_MESSAGE = (
 
 HELP_MESSAGE = (
     "Here's what I can do:\n\n"
-    "*Check In* — Your daily check-in. Tap it again later the same day to add a note\n"
+    "*Check In* — Your daily check-in. Afterwards it becomes *Add a note*, for the rest of the day\n"
     "*History* — See your last 7 entries\n"
     "*Stats* — View your streak and mood trends\n"
     "*Export* — A summary of the last 30 days to bring to a therapy session, "

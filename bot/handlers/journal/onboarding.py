@@ -26,6 +26,7 @@ from bot.handlers.journal.states import (
     ONBOARDING_TIME,
     ONBOARDING_TIMEZONE,
 )
+from bot.handlers.journal.main_menu import main_menu_keyboard
 from bot.handlers.journal.timezones import detect_timezone, search_timezones
 from bot.keyboards import THERAPY_ANSWERS, get_main_menu_keyboard, get_therapy_keyboard, get_timezone_keyboard
 from messages.markdown import escape_md
@@ -72,7 +73,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         context.user_data['name'] = user['name']
         await update.message.reply_text(
             MAIN_MENU_MESSAGE.format(name=user['name']),
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=await main_menu_keyboard(telegram_id)
         )
         return MAIN_MENU
 

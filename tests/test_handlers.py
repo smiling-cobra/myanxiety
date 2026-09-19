@@ -801,6 +801,14 @@ class TestRecoverState:
             state = await recover_state(update, _context())
         assert state == CHECK_IN_MOOD
 
+    async def test_a_stale_add_a_note_tap_is_acted_on_immediately(self):
+        from bot.keyboards import ADD_NOTE
+        update = _update(ADD_NOTE)
+        with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            self._onboarded(mock_svc)
+            state = await recover_state(update, _context())
+        assert state == CHECK_IN_MOOD
+
     async def test_the_name_is_restored_for_later_handlers(self):
         ctx = _context()
         with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
@@ -1820,10 +1828,9 @@ class TestNotes:
 
 
 class TestCheckInPromptAfterCheckingIn:
-    async def _prompt(self, checked_in: bool) -> str:
+    async def _prompt(self, checked_in: bool, label: str = '📝 Check In') -> str:
         from bot.handlers.journal import handle_main_menu
-        from bot.keyboards import CHECK_IN
-        update = _update(CHECK_IN)
+        update = _update(label)
         with patch('bot.handlers.journal.deps.journal_svc') as mock_svc:
             mock_svc.checked_in_today.return_value = checked_in
             state = await handle_main_menu(update, _context({'name': 'Sam'}))
@@ -1837,3 +1844,55 @@ class TestCheckInPromptAfterCheckingIn:
     async def test_later_in_the_day_offers_a_note(self):
         from messages.strings import NOTE_MOOD_PROMPT
         assert await self._prompt(True) == NOTE_MOOD_PROMPT.format(name='Sam')
+
+    async def test_a_stale_add_a_note_label_still_starts_the_days_check_in(self):
+        """The keyboard does not change at midnight. The prompt goes by the day, not the label."""
+        from bot.keyboards import ADD_NOTE
+        from messages.strings import CHECK_IN_MOOD_PROMPT
+        assert await self._prompt(False, label=ADD_NOTE) == CHECK_IN_MOOD_PROMPT.format(name='Sam')
+
+
+def _entry_button(reply_markup) -> str:
+    """The label on the first row of a main-menu keyboard."""
+    return reply_markup.keyboard[0][0].text
+
+
+class TestMenuButtonLabel:
+    async def _stats_button(self, **journal_svc) -> str:
+        update = _update('')
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.user_svc'), \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            mock_svc.get_stats.return_value = {'streak': 0, 'total': 0, 'avg_mood': None}
+            mock_svc.configure_mock(**journal_svc)
+            await show_stats(update, _context({'name': 'Sam'}))
+        return _entry_button(update.message.reply_text.call_args.kwargs['reply_markup'])
+
+    async def test_check_in_before_todays_check_in(self):
+        from bot.keyboards import CHECK_IN
+        assert await self._stats_button(**{'checked_in_today.return_value': False}) == CHECK_IN
+
+    async def test_add_a_note_after_todays_check_in(self):
+        from bot.keyboards import ADD_NOTE
+        assert await self._stats_button(**{'checked_in_today.return_value': True}) == ADD_NOTE
+
+    async def test_a_failed_read_falls_back_to_check_in(self):
+        from bot.keyboards import CHECK_IN
+        assert await self._stats_button(**{'checked_in_today.side_effect': RuntimeError('mongo down')}) == CHECK_IN
+
+    @pytest.mark.parametrize('first_of_day', [True, False])
+    async def test_a_completed_entry_returns_add_a_note(self, first_of_day):
+        from bot.keyboards import ADD_NOTE
+        update = _update('A quiet day')
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.analytics_svc'), \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            usage.consume_llm.return_value = True
+            mock_svc.save_entry.return_value = first_of_day
+            mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 7}
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'A reflection.'
+            await handle_entry_text(update, _context({'name': 'Alice', 'mood_score': 7}))
+        mock_svc.checked_in_today.assert_not_called()
+        assert _entry_button(update.message.reply_text.call_args.kwargs['reply_markup']) == ADD_NOTE

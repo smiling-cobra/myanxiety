@@ -24,7 +24,8 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.handlers.journal import deps
 from bot.handlers.journal.states import DELETE_CONFIRM, MAIN_MENU
-from bot.keyboards import DELETE_YES, get_delete_keyboard, get_main_menu_keyboard
+from bot.handlers.journal.main_menu import main_menu_keyboard
+from bot.keyboards import DELETE_YES, get_delete_keyboard
 from messages.strings import DELETE_CANCELLED, DELETE_CONFIRM_PROMPT, DELETE_DONE, DELETE_FAILED
 from services import analytics_service as analytics
 
@@ -68,7 +69,7 @@ async def _cancel(update: Update, telegram_id: int) -> int:
     # /delete is reachable mid-onboarding, where there is no main menu to go back to.
     user = await asyncio.to_thread(deps.user_svc.get, telegram_id)
     if user and user.get('onboarded'):
-        await update.message.reply_text(DELETE_CANCELLED, reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(DELETE_CANCELLED, reply_markup=await main_menu_keyboard(telegram_id))
         return MAIN_MENU
 
     await update.message.reply_text(DELETE_CANCELLED, reply_markup=ReplyKeyboardRemove())

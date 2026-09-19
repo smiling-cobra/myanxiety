@@ -189,7 +189,8 @@ async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await asyncio.to_thread(deps.usage_svc.refund, telegram_id, 1)
 
     body = await _completion_message(telegram_id, name, first_of_day, llm_response, stats['streak'])
-    await update.message.reply_text(body, reply_markup=get_main_menu_keyboard(), parse_mode='Markdown')
+    # Whichever kind this was, the next entry today is a note.
+    await update.message.reply_text(body, reply_markup=get_main_menu_keyboard(checked_in=True), parse_mode='Markdown')
     await asyncio.to_thread(
         deps.analytics_svc.track,
         analytics.CHECK_IN_COMPLETED,
@@ -237,7 +238,7 @@ async def handle_guidance_offer(update: Update, context: ContextTypes.DEFAULT_TY
 
     if update.message.text != GUIDANCE_YES:
         await asyncio.to_thread(deps.analytics_svc.track, analytics.GUIDANCE_DECLINED, telegram_id)
-        await update.message.reply_text(GUIDANCE_DECLINED, reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(GUIDANCE_DECLINED, reply_markup=get_main_menu_keyboard(checked_in=True))
         return MAIN_MENU
 
     entry_text = context.user_data.get('entry_text', '')
@@ -261,5 +262,5 @@ async def handle_guidance_offer(update: Update, context: ContextTypes.DEFAULT_TY
         )
         guidance = GUIDANCE_STATIC_FALLBACK
 
-    await update.message.reply_text(guidance, reply_markup=get_main_menu_keyboard())
+    await update.message.reply_text(guidance, reply_markup=get_main_menu_keyboard(checked_in=True))
     return MAIN_MENU
