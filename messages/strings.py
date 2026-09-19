@@ -1,7 +1,10 @@
+# Says what the bot is and what it is for, not what it treats: the line between
+# a wellness tool and a medical claim is drawn by copy like this.
 ONBOARDING_WELCOME = (
-    "Hi! I'm your anxiety journal. 🌿\n\n"
-    "I'm here to help you process your thoughts and feelings through daily check-ins. "
-    "Over time, we'll spot patterns together.\n\n"
+    "Hi! I'm a daily check-in journal. 🌿\n\n"
+    "Once a day I'll ask how you're feeling and what's on your mind. Over time that becomes "
+    "a record of how you've really been — and, if you're seeing a therapist, a short summary "
+    "you can bring to your next session.\n\n"
     "First, a quick word about what happens to what you write."
 )
 
@@ -17,8 +20,9 @@ PRIVACY_NOTICE = (
     "on this server — nothing extra is sent anywhere, and no judgement is made about you.\n"
     "• I record which features you use and when — never what you write — to see whether "
     "the bot is actually helping. Those records are deleted after 180 days.\n"
-    "• */export* sends you a file of your recent entries, in this chat. Once you have it, "
-    "where it goes is up to you.\n"
+    "• */export* sends you a file of your last 30 days — a summary, then everything you wrote "
+    "in full — in this chat. It's made for sharing with a therapist, but nobody sees it unless "
+    "you send it to them yourself.\n"
     "• */delete* permanently removes everything this bot stores about you, in one step.\n"
     "• I'm a journalling tool. I'm not a therapist, a diagnosis, or a crisis service.\n\n"
     "Type */privacy* any time to read this again."
@@ -58,8 +62,19 @@ ONBOARDING_THERAPY = (
 
 ONBOARDING_DONE = (
     "You're all set, {name}! ✅\n\n"
-    "I'll check in with you every day at {reminder_time} ({timezone}).\n\n"
+    "I'll remind you every day at {reminder_time} ({timezone}). That's your *daily check-in*: "
+    "a mood rating, a few lines about your day, and a reply from me.\n\n"
+    "If something comes up later the same day, tap *Check In* again to add a *note* to that day.\n\n"
+    "• */flag* marks your latest entry as something to raise in your next session\n"
+    "• */export* sends you a summary of your last 30 days\n\n"
+    "{therapy_tip}"
     "Whenever you're ready, tap *Check In* to start your first entry."
+)
+
+# Added to ONBOARDING_DONE only for someone who said they are seeing a therapist.
+ONBOARDING_THERAPY_TIP = (
+    "Since you're seeing someone: the export opens with a summary meant to be read in a minute "
+    "or two. Flag things as they happen, and send */export* the day before your session.\n\n"
 )
 
 MAIN_MENU_MESSAGE = "What would you like to do, {name}?"
@@ -127,10 +142,11 @@ STATS_MESSAGE = (
 
 HELP_MESSAGE = (
     "Here's what I can do:\n\n"
-    "*Check In* — Start your daily journal entry\n"
+    "*Check In* — Your daily check-in. Tap it again later the same day to add a note\n"
     "*History* — See your last 7 entries\n"
     "*Stats* — View your streak and mood trends\n"
-    "*Export* — Get a file of the last 30 days to take to a therapy session\n\n"
+    "*Export* — A summary of the last 30 days to bring to a therapy session, "
+    "followed by your entries in full\n\n"
     "You can also use these commands any time:\n"
     "*/history* — Show your recent entries\n"
     "*/stats* — Show your stats\n"

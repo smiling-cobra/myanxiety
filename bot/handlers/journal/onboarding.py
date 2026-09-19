@@ -32,6 +32,7 @@ from messages.markdown import escape_md
 from messages.strings import (
     ONBOARDING_DONE,
     ONBOARDING_THERAPY as ONBOARDING_THERAPY_MSG,
+    ONBOARDING_THERAPY_TIP,
     ONBOARDING_TIME as ONBOARDING_TIME_MSG,
     ONBOARDING_TIMEZONE as ONBOARDING_TIMEZONE_MSG,
     ONBOARDING_WELCOME,
@@ -211,7 +212,8 @@ async def handle_therapy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         ONBOARDING_DONE.format(
             name=escape_md(name),
             reminder_time=user.get('reminder_time', ''),
-            timezone=user.get('timezone', ''),
+            timezone=escape_md(user.get('timezone', '')),
+            therapy_tip=ONBOARDING_THERAPY_TIP if answer == 'yes' else '',
         ),
         reply_markup=get_main_menu_keyboard(),
         parse_mode='Markdown',

@@ -641,6 +641,16 @@ class TestPrivacyNotice:
         from messages.strings import HELP_MESSAGE
         assert '/privacy' in HELP_MESSAGE
 
+    def test_the_notice_says_the_export_is_shared_only_by_the_user(self):
+        from messages.strings import PRIVACY_NOTICE
+        assert 'nobody sees it unless you send it to them yourself' in PRIVACY_NOTICE
+
+    def test_welcome_makes_no_treatment_claim(self):
+        """Copy decides whether this reads as a wellness tool or a medical one."""
+        from messages.strings import ONBOARDING_WELCOME
+        for claim in ('help you', 'treat', 'heal', 'therapy for', 'anxiety'):
+            assert claim not in ONBOARDING_WELCOME.lower()
+
     def test_welcome_makes_no_bare_privacy_claim(self):
         """The bot forwards entry text to a third-party API, so 'private
         anxiety journal' was an inaccurate opening line, not just a legal gap."""
@@ -1042,6 +1052,32 @@ class TestTherapyCohortQuestion:
             }
             await handle_therapy(update, _context())
         assert '21:30' in update.message.reply_text.call_args.args[0]
+
+    async def _closing_message(self, answer: str, timezone: str = 'Europe/London') -> str:
+        update = _update(answer)
+        with patch('bot.handlers.journal.deps.user_svc') as mock_svc:
+            mock_svc.get.return_value = {'name': 'Alice', 'timezone': timezone, 'reminder_time': '09:00'}
+            await handle_therapy(update, _context())
+        return update.message.reply_text.call_args.args[0]
+
+    async def test_someone_in_therapy_is_told_how_to_use_the_export(self):
+        from messages.strings import ONBOARDING_THERAPY_TIP
+        assert ONBOARDING_THERAPY_TIP in await self._closing_message('Yes')
+
+    async def test_everyone_else_gets_the_plain_closing_message(self):
+        from messages.strings import ONBOARDING_THERAPY_TIP
+        for answer in ('No', 'Prefer not to say', 'why do you ask'):
+            assert ONBOARDING_THERAPY_TIP not in await self._closing_message(answer)
+
+    async def test_the_closing_message_explains_check_ins_notes_flag_and_export(self):
+        text = await self._closing_message('No')
+        for phrase in ('*daily check-in*', '*note*', '*/flag*', '*/export*'):
+            assert phrase in text
+
+    async def test_an_underscore_in_the_timezone_is_escaped(self):
+        """The message is sent as Markdown; a bare underscore in America/New_York
+        opens an italic span Telegram cannot close, and the send is rejected."""
+        assert 'America/New\\_York' in await self._closing_message('No', timezone='America/New_York')
 
 
 # ---------------------------------------------------------------------------
