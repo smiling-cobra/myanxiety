@@ -8,8 +8,9 @@ reinterprets every stored row after it — a user resting on the main menu would
 come back as mid-onboarding, and a user mid-check-in would have their next
 message routed to a handler expecting something else entirely.
 
-That is why `ONBOARDING_THERAPY` sits at the end rather than in flow order: it
-was added after the others had already been written to the database.
+That is why `ONBOARDING_THERAPY` sits after the check-in states rather than in
+flow order, and why `DELETE_CONFIRM` follows it: each was added after the
+others had already been written to the database.
 `tests/test_states.py` pins these values so a future insertion fails CI instead
 of production.
 """
@@ -22,7 +23,8 @@ of production.
     CHECK_IN_TEXT,
     CHECK_IN_GUIDANCE_OFFER,
     ONBOARDING_THERAPY,
-) = range(8)
+    DELETE_CONFIRM,
+) = range(9)
 
 LOW_MOOD_THRESHOLD = 4
 CRISIS_MOOD_THRESHOLD = 2

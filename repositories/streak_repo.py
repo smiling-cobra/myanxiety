@@ -13,6 +13,9 @@ class StreakRepository:
     def get_full(self, telegram_id: int) -> dict | None:
         return streaks_collection().find_one({'telegram_id': telegram_id}, {'_id': 0})
 
+    def delete_for_user(self, telegram_id: int) -> int:
+        return streaks_collection().delete_many({'telegram_id': telegram_id}).deleted_count
+
     def update(self, telegram_id: int, streak: int, last_check_in: datetime) -> None:
         streaks_collection().update_one(
             {'telegram_id': telegram_id},

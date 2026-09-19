@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from services.llm_service import LlmService
+from services.llm_service import FALLBACK_REPLY, LlmService
 
 DEFAULT_MODEL = 'claude-3-5-sonnet-latest'
 
@@ -167,3 +167,61 @@ class TestModelSelection:
 
         _, kwargs = svc._client.messages.create.call_args
         assert kwargs['model'] == DEFAULT_MODEL
+
+
+# ---------------------------------------------------------------------------
+# extract_tags — a failed call must not become a tag
+#
+# `_call` answers a failure with an apology for a person to read. Split on
+# commas, that apology used to be saved as the entry's tags on every outage.
+# ---------------------------------------------------------------------------
+
+class TestExtractTagsOnFailure:
+    def test_api_error_yields_no_tags(self):
+        svc = _svc()
+        svc._client.messages.create.side_effect = Exception('API down')
+        assert svc.extract_tags('had a tough day at work') == []
+
+    def test_fallback_prose_never_reaches_the_tags(self):
+        svc = _svc()
+        svc._client.messages.create.side_effect = Exception('API down')
+        tags = svc.extract_tags('had a tough day at work')
+        assert not any(fragment.strip().lower() in tags for fragment in FALLBACK_REPLY.split(','))
+
+    def test_malformed_response_yields_no_tags(self):
+        svc = _svc()
+        svc._client.messages.create.return_value = MagicMock(content=[])
+        assert svc.extract_tags('had a tough day at work') == []
+
+    def test_successful_call_is_still_parsed(self):
+        svc = _svc()
+        svc._client.messages.create.return_value = _mock_response('Work, Sleep')
+        assert svc.extract_tags('had a tough day at work') == ['work', 'sleep']
+
+    def test_prose_methods_still_fall_back_for_the_reader(self):
+        svc = _svc()
+        svc._client.messages.create.side_effect = Exception('API down')
+        assert svc.get_empathetic_response(5, 'entry') == FALLBACK_REPLY
+
+
+class TestExtractTagsNormalises:
+    def test_variants_in_the_reply_are_stored_canonically(self):
+        svc = _svc()
+        svc._client.messages.create.return_value = _mock_response('Job, #Deadlines, insomnia')
+        assert svc.extract_tags('entry') == ['work', 'sleep']
+
+    def test_prose_in_the_reply_is_not_a_tag(self):
+        svc = _svc()
+        svc._client.messages.create.return_value = _mock_response(
+            'Here are the tags for this journal entry, work, sleep'
+        )
+        assert svc.extract_tags('entry') == ['work', 'sleep']
+
+    def test_prompt_offers_the_vocabulary(self):
+        from services.tags import CANONICAL_TAGS
+
+        svc = _svc()
+        svc._client.messages.create.return_value = _mock_response('work')
+        svc.extract_tags('entry')
+        prompt = svc._client.messages.create.call_args.kwargs['messages'][0]['content']
+        assert all(tag in prompt for tag in CANONICAL_TAGS)

@@ -139,7 +139,7 @@ class SchedulerService:
             parse_mode='Markdown',
         )
         await asyncio.to_thread(
-            self._user_svc.create_or_update,
+            self._user_svc.update,
             user['telegram_id'],
             last_reminder_sent=today,
         )
@@ -186,7 +186,7 @@ class SchedulerService:
             parse_mode='Markdown',
         )
         await asyncio.to_thread(
-            self._user_svc.create_or_update,
+            self._user_svc.update,
             user['telegram_id'],
             last_weekly_summary_sent=today,
             last_weekly_summary_check=today,
@@ -203,7 +203,7 @@ class SchedulerService:
     async def _skip_weekly_summary(self, user: dict, today: str, reason: str, **props) -> None:
         """Close today's window without sending, and say why in the event stream."""
         await asyncio.to_thread(
-            self._user_svc.create_or_update,
+            self._user_svc.update,
             user['telegram_id'],
             last_weekly_summary_check=today,
         )

@@ -64,6 +64,15 @@ HISTORY_VIEWED = 'history_viewed'
 STATS_VIEWED = 'stats_viewed'
 WEEKLY_SUMMARY_VIEWED = 'weekly_summary_viewed'
 
+# User control
+EXPORT_REQUESTED = 'export_requested'
+SESSION_FLAG_TOGGLED = 'session_flag_toggled'
+DELETE_CANCELLED = 'delete_cancelled'
+# Recorded *after* the fan-out, with no telegram_id: every event the user ever
+# generated has just been deleted, and this one must not be the row that
+# re-links them. Its props are counts, which join to nothing.
+ACCOUNT_DELETED = 'account_deleted'
+
 # Spend and failure
 LLM_BUDGET_EXCEEDED = 'llm_budget_exceeded'
 HANDLER_ERROR = 'handler_error'

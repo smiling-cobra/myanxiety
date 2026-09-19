@@ -1,11 +1,18 @@
+from __future__ import annotations
+
 import logging
 import os
 
 import anthropic
 
+from services.tags import CANONICAL_TAGS, MAX_TAGS, parse_tag_list
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = 'claude-3-5-sonnet-latest'
+
+# What a prose-returning method answers with when Anthropic cannot be reached.
+FALLBACK_REPLY = "I'm having trouble responding right now. Please try again later."
 
 
 class LlmService:
@@ -28,13 +35,24 @@ class LlmService:
         return self._call(prompt)
 
     def extract_tags(self, entry_text: str) -> list:
+        # Offering the vocabulary is what keeps tags comparable across entries;
+        # `parse_tag_list` is what guarantees it, whatever the model returns.
         prompt = (
-            f"Extract 1-5 short tags (1-2 words each) from this journal entry that capture "
-            f"the main themes or triggers. Return only a comma-separated list, nothing else.\n\n"
+            f"Extract 1-{MAX_TAGS} short tags (1-2 words each) from this journal entry that capture "
+            f"the main themes or triggers. Where one of these fits, use it exactly: "
+            f"{', '.join(CANONICAL_TAGS)}. Otherwise use a short lowercase noun. "
+            f"Return only a comma-separated list, nothing else.\n\n"
             f"Entry: \"{entry_text}\""
         )
-        raw = self._call(prompt)
-        return [t.strip().lower() for t in raw.split(',') if t.strip()][:5]
+        # Not `_call`: its fallback is an apology written for a person, and split
+        # on commas it becomes a "tag". Every Anthropic outage used to write that
+        # sentence into the entry it failed on, polluting the data that stats and weekly
+        # themes are built from. An entry with no tags is honest; an entry
+        # tagged with an error message is not.
+        raw = self._complete(prompt)
+        if raw is None:
+            return []
+        return parse_tag_list(raw)
 
     def get_weekly_summary(self, entries: list) -> str:
         formatted = '\n'.join(
@@ -77,6 +95,12 @@ class LlmService:
         return self._call(prompt, max_tokens=600)
 
     def _call(self, prompt: str, max_tokens: int = 512) -> str:
+        """The model's reply, or `FALLBACK_REPLY` — for text a person reads."""
+        text = self._complete(prompt, max_tokens)
+        return FALLBACK_REPLY if text is None else text
+
+    def _complete(self, prompt: str, max_tokens: int = 512) -> str | None:
+        """The model's reply, or None if the call failed — for text that is stored as data."""
         try:
             message = self._client.messages.create(
                 model=self._model,
@@ -86,4 +110,4 @@ class LlmService:
             return message.content[0].text
         except Exception as e:
             logger.error(f'LLM call failed: {e}')
-            return "I'm having trouble responding right now. Please try again later."
+            return None

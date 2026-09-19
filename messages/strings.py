@@ -17,8 +17,9 @@ PRIVACY_NOTICE = (
     "on this server — nothing extra is sent anywhere, and no judgement is made about you.\n"
     "• I record which features you use and when — never what you write — to see whether "
     "the bot is actually helping. Those records are deleted after 180 days.\n"
-    "• There's no self-serve delete yet — it's being built. Until then, ask and "
-    "your data will be removed.\n"
+    "• */export* sends you a file of your recent entries, in this chat. Once you have it, "
+    "where it goes is up to you.\n"
+    "• */delete* permanently removes everything this bot stores about you, in one step.\n"
     "• I'm a journalling tool. I'm not a therapist, a diagnosis, or a crisis service.\n\n"
     "Type */privacy* any time to read this again."
 )
@@ -76,7 +77,8 @@ CHECK_IN_TEXT_PROMPT = (
 CHECK_IN_DONE = (
     "Thank you for sharing, {name}.\n\n"
     "{llm_response}\n\n"
-    "_{streak} day(s) in a row. Keep it up!_"
+    "_{streak} day(s) in a row. Keep it up!_\n\n"
+    "Want to talk about this in therapy? Send /flag."
 )
 
 # Shown instead of CHECK_IN_DONE once a user is at their daily LLM ceiling.
@@ -88,7 +90,8 @@ CHECK_IN_DONE_BRIEF = (
     "I've reached my limit for written replies today, so there's no reflection from me "
     "this time — but what you wrote is safely in your journal, and I'll be back to normal "
     "tomorrow.\n\n"
-    "_{streak} day(s) in a row. Keep it up!_"
+    "_{streak} day(s) in a row. Keep it up!_\n\n"
+    "Want to talk about this in therapy? Send /flag."
 )
 
 HISTORY_EMPTY = "You haven't made any entries yet. Tap *Check In* to start!"
@@ -111,11 +114,15 @@ HELP_MESSAGE = (
     "Here's what I can do:\n\n"
     "*Check In* — Start your daily journal entry\n"
     "*History* — See your last 7 entries\n"
-    "*Stats* — View your streak and mood trends\n\n"
+    "*Stats* — View your streak and mood trends\n"
+    "*Export* — Get a file of the last 30 days to take to a therapy session\n\n"
     "You can also use these commands any time:\n"
     "*/history* — Show your recent entries\n"
     "*/stats* — Show your stats\n"
     "*/summary* — Show your weekly mood summary\n"
+    "*/export* — Get a file of your recent entries\n"
+    "*/flag* — Mark your latest entry to raise in your next session\n"
+    "*/delete* — Permanently delete everything I store about you\n"
     "*/privacy* — What happens to what you write\n"
     "*/cancel* — End the current session\n\n"
     "———\n"
@@ -201,6 +208,53 @@ WEEKLY_SUMMARY_NOTIFICATION = (
     "📈 *Your weekly insight*\n\n"
     "{summary}\n\n"
     "_Open your journal to see the full mood trend._"
+)
+
+EXPORT_EMPTY = (
+    "There's nothing to export yet — you haven't written any entries in the last {days} days. "
+    "Tap *Check In* to start one."
+)
+
+# Sent as the document's caption, so it must stay under Telegram's 1024-character
+# caption limit. Plain text: captions are not parsed as Markdown here.
+EXPORT_CAPTION = (
+    "Your journal for the last {days} days — {count} {entries}.\n\n"
+    "It's a plain text file you can open on your phone, print, or show to your therapist. "
+    "It has everything you wrote in full, so share it only with people you trust."
+)
+
+FLAG_SET = (
+    "🚩 Flagged your entry from {date} to raise in your next session. "
+    "It'll be listed first when you */export*.\n\n"
+    "Send /flag again to remove the flag."
+)
+
+FLAG_CLEARED = "Removed the flag from your entry from {date}."
+
+FLAG_NO_ENTRY = "There's no entry to flag yet. Tap *Check In* to write one, then send /flag."
+
+DELETE_CONFIRM_PROMPT = (
+    "*Delete everything?*\n\n"
+    "This permanently removes everything this bot stores about you: every journal entry, "
+    "your mood scores and tags, your streak, your name and reminder settings, and the "
+    "records of how you've used the bot.\n\n"
+    "It can't be undone. If you want a copy first, choose *No* and send */export*.\n\n"
+    "Two things this can't reach: the messages in this Telegram chat (you can clear the "
+    "chat yourself), and text that was already sent to Anthropic, which is handled under "
+    "Anthropic's own data retention terms."
+)
+
+DELETE_DONE = (
+    "Done. Everything I stored about you has been deleted, and you won't get any more "
+    "reminders from me.\n\n"
+    "If you ever want to start again, send /start. Take care. 🌿"
+)
+
+DELETE_CANCELLED = "Nothing was deleted. Your journal is exactly as it was."
+
+DELETE_FAILED = (
+    "Sorry — I couldn't finish deleting your data just now, so some of it may still be "
+    "stored. Please send /delete again in a few minutes; it's safe to repeat."
 )
 
 CANCEL_MESSAGE = "Take care, {name}. I'm here whenever you need me. 🌿"

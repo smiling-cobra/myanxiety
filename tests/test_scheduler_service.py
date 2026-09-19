@@ -74,8 +74,10 @@ class _FakeUserService:
     def get_all_onboarded(self) -> list:
         return [dict(u) for u in self._users.values()]
 
-    def create_or_update(self, telegram_id: int, **kwargs) -> None:
-        self._users[telegram_id].update(kwargs)
+    def update(self, telegram_id: int, **kwargs) -> None:
+        # Mirrors UserService.update: a missing user is not created.
+        if telegram_id in self._users:
+            self._users[telegram_id].update(kwargs)
 
 
 class _FakeJobQueue:
@@ -426,7 +428,7 @@ class TestSendReminder:
         svc = _svc()
         ctx = _context()
         await svc._send_reminder(ctx, _user(), '2026-03-28')
-        svc._user_svc.create_or_update.assert_called_once_with(1, last_reminder_sent='2026-03-28')
+        svc._user_svc.update.assert_called_once_with(1, last_reminder_sent='2026-03-28')
 
     async def test_sends_to_multiple_due_users(self):
         svc = _svc()
@@ -480,7 +482,7 @@ class TestSendWeeklySummary:
         svc = _svc()
         svc._journal_svc.get_weekly_entries.return_value = []
         await svc._send_weekly_summary(_context(), _user(), '2026-03-29')
-        svc._user_svc.create_or_update.assert_called_once_with(1, last_weekly_summary_check='2026-03-29')
+        svc._user_svc.update.assert_called_once_with(1, last_weekly_summary_check='2026-03-29')
 
     async def test_updates_both_watermarks_after_send(self):
         svc = _svc()
@@ -489,7 +491,7 @@ class TestSendWeeklySummary:
         ]
         svc._llm_svc.get_weekly_summary.return_value = 'Summary.'
         await svc._send_weekly_summary(_context(), _user(), '2026-03-29')
-        svc._user_svc.create_or_update.assert_called_once_with(
+        svc._user_svc.update.assert_called_once_with(
             1, last_weekly_summary_sent='2026-03-29', last_weekly_summary_check='2026-03-29'
         )
 

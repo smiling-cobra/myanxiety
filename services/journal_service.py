@@ -42,17 +42,37 @@ class JournalService:
         return self._entries.find_recent(telegram_id, limit)
 
     def get_weekly_entries(self, telegram_id: int, user_timezone: str = None) -> list:
-        """Entries from the last 7 local calendar days, today included.
+        """Entries from the last 7 local calendar days, today included."""
+        return self.get_entries_for_days(telegram_id, _WEEK_DAYS, user_timezone)
 
-        The window starts at local midnight rather than 168 hours ago, so the
-        summary covers whole days as the user experienced them. Callers holding
-        the user record already can pass `user_timezone` to save a lookup.
+    def get_entries_for_days(self, telegram_id: int, days: int, user_timezone: str = None) -> list:
+        """Entries from the last `days` local calendar days, today included, oldest first.
+
+        The window starts at local midnight rather than `days * 24` hours ago, so
+        it covers whole days as the user experienced them. Callers holding the
+        user record already can pass `user_timezone` to save a lookup.
         """
         tz = self._timezone_for(telegram_id, user_timezone)
         today_local = time_utils.now().astimezone(tz).date()
-        first_day = today_local - timedelta(days=_WEEK_DAYS - 1)
+        first_day = today_local - timedelta(days=days - 1)
         since = datetime.combine(first_day, time.min, tzinfo=tz).astimezone(time_utils.UTC)
         return self._entries.find_since(telegram_id, since)
+
+    def toggle_session_flag(self, telegram_id: int) -> dict | None:
+        """Flag the latest entry to raise in a therapy session, or unflag it if it already is.
+
+        Returns the entry as it now stands, or None if the user has no entries.
+        Only the latest entry can be flagged: the moment someone thinks "I want
+        to talk about this" is right after writing it, and anything more needs
+        a way to pick an entry that v0 does not have.
+        """
+        entry = self._entries.find_latest(telegram_id)
+        if entry is None:
+            return None
+        flagged = not entry.get('flagged_for_session', False)
+        self._entries.set_flagged(entry['_id'], flagged)
+        entry['flagged_for_session'] = flagged
+        return entry
 
     def get_stats(self, telegram_id: int) -> dict:
         return {

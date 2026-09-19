@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from datetime import datetime
 
 from bot.handlers.journal import (
@@ -358,6 +360,18 @@ class TestShowStats:
             await show_stats(update, _context())
         from messages.strings import ERROR_GENERIC
         assert update.message.reply_text.call_args.args[0] == ERROR_GENERIC
+
+    async def test_tag_variants_are_counted_as_one_theme(self):
+        update = _update('')
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc:
+            mock_svc.get_stats.return_value = {'total': 3, 'streak': 1, 'avg_mood': 5}
+            mock_svc.get_recent_entries.return_value = [
+                {'tags': ['job']}, {'tags': ['Work']}, {'tags': ['work stress', 'sleep']},
+            ]
+            await show_stats(update, _context())
+        text = update.message.reply_text.call_args.args[0]
+        assert 'Top tags: #work, #sleep' in text
+        assert 'job' not in text
 
 
 # ---------------------------------------------------------------------------
@@ -816,6 +830,10 @@ class TestHandlersAreCoroutines:
             journal.show_history,
             journal.show_stats,
             journal.show_weekly_summary,
+            journal.send_export,
+            journal.toggle_flag,
+            journal.request_delete,
+            journal.handle_delete_confirmation,
             journal.handle_guidance_offer,
             journal.cancel,
             journal.recover_state,
@@ -1432,3 +1450,237 @@ class TestFailedCheckInRefundsTheUnspentCall:
             mock_svc.get_stats.return_value = {'streak': 1, 'total': 1, 'avg_mood': 6}
             await handle_entry_text(_update('A quiet day'), ctx)
         usage.refund.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — /export
+# ---------------------------------------------------------------------------
+
+class TestSendExport:
+    @staticmethod
+    def _export(count: int = 3):
+        from services.export import Export
+        return Export(filename='journal-2026-09-30.md', content=b'# Journal', entry_count=count, flagged_count=0)
+
+    async def test_the_file_is_sent_as_a_document(self):
+        from bot.handlers.journal import send_export
+        update = _update('/export')
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            export_svc.build.return_value = self._export()
+            state = await send_export(update, _context())
+        assert state == MAIN_MENU
+        kwargs = update.message.reply_document.call_args.kwargs
+        assert kwargs['document'] == b'# Journal'
+        assert kwargs['filename'] == 'journal-2026-09-30.md'
+        assert '3 entries' in kwargs['caption']
+        assert len(kwargs['caption']) <= 1024
+
+    async def test_nothing_to_export_says_so_and_sends_no_file(self):
+        from bot.handlers.journal import send_export
+        update = _update('/export')
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            export_svc.build.return_value = None
+            state = await send_export(update, _context())
+        assert state == MAIN_MENU
+        update.message.reply_document.assert_not_called()
+        assert 'nothing to export' in update.message.reply_text.call_args.args[0]
+
+    async def test_a_failure_returns_to_the_menu_with_an_apology(self):
+        from bot.handlers.journal import send_export
+        from messages.strings import ERROR_GENERIC
+        update = _update('/export')
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc:
+            export_svc.build.side_effect = Exception('DB down')
+            state = await send_export(update, _context())
+        assert state == MAIN_MENU
+        assert update.message.reply_text.call_args.args[0] == ERROR_GENERIC
+
+    async def test_the_request_is_recorded_including_empty_ones(self):
+        from bot.handlers.journal import send_export
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            export_svc.build.return_value = None
+            await send_export(_update('/export'), _context())
+        event, _ = analytics.track.call_args.args
+        assert event == 'export_requested'
+        assert analytics.track.call_args.kwargs == {'entry_count': 0, 'flagged_count': 0, 'days': 30}
+
+    async def test_the_menu_button_exports(self):
+        from bot.handlers.journal import handle_main_menu
+        from bot.keyboards import EXPORT
+        update = _update(EXPORT)
+        with patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            export_svc.build.return_value = self._export()
+            await handle_main_menu(update, _context({'name': 'Sam'}))
+        assert update.message.reply_document.called
+
+    async def test_a_stale_export_button_works_after_state_loss(self):
+        from bot.keyboards import EXPORT
+        update = _update(EXPORT)
+        with patch('bot.handlers.journal.deps.user_svc') as user_svc, \
+             patch('bot.handlers.journal.deps.export_svc') as export_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            user_svc.get.return_value = {'telegram_id': 12345, 'name': 'Sam', 'onboarded': True}
+            export_svc.build.return_value = self._export()
+            await recover_state(update, _context())
+        assert update.message.reply_document.called
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — /delete
+#
+# The fan-out is tested against a real (mongomock) database in
+# tests/test_account_service.py. These cover the conversation around it: that
+# nothing is deleted without the exact confirmation, and that the in-memory
+# state the database cannot see is cleared too.
+# ---------------------------------------------------------------------------
+
+class TestDelete:
+    async def test_delete_asks_before_doing_anything(self):
+        from bot.handlers.journal import DELETE_CONFIRM, request_delete
+        from messages.strings import DELETE_CONFIRM_PROMPT
+        update = _update('/delete')
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc:
+            state = await request_delete(update, _context())
+        assert state == DELETE_CONFIRM
+        assert update.message.reply_text.call_args.args[0] == DELETE_CONFIRM_PROMPT
+        account_svc.delete_everything.assert_not_called()
+
+    def test_the_prompt_is_honest_about_what_it_cannot_reach(self):
+        from messages.strings import DELETE_CONFIRM_PROMPT
+        assert 'Telegram chat' in DELETE_CONFIRM_PROMPT
+        assert 'Anthropic' in DELETE_CONFIRM_PROMPT
+        assert '/export' in DELETE_CONFIRM_PROMPT
+
+    async def test_the_confirm_button_deletes_everything(self):
+        from telegram import ReplyKeyboardRemove
+        from telegram.ext import ConversationHandler
+        from bot.handlers.journal import handle_delete_confirmation
+        from bot.keyboards import DELETE_YES
+        from messages.strings import DELETE_DONE
+        update = _update(DELETE_YES)
+        ctx = _context({'name': 'Sam', 'mood_score': 3})
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            account_svc.delete_everything.return_value = {'entries': 4}
+            state = await handle_delete_confirmation(update, ctx)
+        account_svc.delete_everything.assert_called_once_with(12345)
+        assert state == ConversationHandler.END
+        assert update.message.reply_text.call_args.args[0] == DELETE_DONE
+        assert isinstance(update.message.reply_text.call_args.kwargs['reply_markup'], ReplyKeyboardRemove)
+
+    async def test_in_memory_user_data_is_cleared_so_persistence_cannot_restore_it(self):
+        from bot.handlers.journal import handle_delete_confirmation
+        from bot.keyboards import DELETE_YES
+        ctx = _context({'name': 'Sam', 'mood_score': 3})
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'):
+            account_svc.delete_everything.return_value = {}
+            await handle_delete_confirmation(_update(DELETE_YES), ctx)
+        assert ctx.user_data == {}
+        ctx.application.drop_user_data.assert_called_once_with(12345)
+
+    async def test_the_deletion_event_is_not_linked_to_the_user(self):
+        from bot.handlers.journal import handle_delete_confirmation
+        from bot.keyboards import DELETE_YES
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            account_svc.delete_everything.return_value = {'entries': 4}
+            await handle_delete_confirmation(_update(DELETE_YES), _context())
+        event, telegram_id = analytics.track.call_args.args
+        assert event == 'account_deleted'
+        assert telegram_id is None
+        assert analytics.track.call_args.kwargs == {'entry_count': 4}
+
+    @pytest.mark.parametrize('reply', ['No, keep my journal', 'yes', 'Yes, delete everything', 'delete'])
+    async def test_anything_but_the_exact_button_deletes_nothing(self, reply):
+        from bot.handlers.journal import handle_delete_confirmation
+        from messages.strings import DELETE_CANCELLED
+        update = _update(reply)
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc'), \
+             patch('bot.handlers.journal.deps.user_svc') as user_svc:
+            user_svc.get.return_value = {'name': 'Sam', 'onboarded': True}
+            state = await handle_delete_confirmation(update, _context())
+        account_svc.delete_everything.assert_not_called()
+        assert state == MAIN_MENU
+        assert update.message.reply_text.call_args.args[0] == DELETE_CANCELLED
+
+    async def test_cancelling_mid_onboarding_does_not_offer_a_menu(self):
+        from telegram.ext import ConversationHandler
+        from bot.handlers.journal import handle_delete_confirmation
+        with patch('bot.handlers.journal.deps.account_svc'), \
+             patch('bot.handlers.journal.deps.analytics_svc'), \
+             patch('bot.handlers.journal.deps.user_svc') as user_svc:
+            user_svc.get.return_value = {'acquisition_source': 'direct'}
+            state = await handle_delete_confirmation(_update('no'), _context())
+        assert state == ConversationHandler.END
+
+    async def test_a_failed_deletion_says_so_and_can_be_retried(self):
+        from telegram.ext import ConversationHandler
+        from bot.handlers.journal import handle_delete_confirmation
+        from bot.keyboards import DELETE_YES
+        from messages.strings import DELETE_FAILED
+        from services.account_service import DeletionIncomplete
+        update = _update(DELETE_YES)
+        with patch('bot.handlers.journal.deps.account_svc') as account_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            account_svc.delete_everything.side_effect = DeletionIncomplete(['entries'])
+            state = await handle_delete_confirmation(update, _context())
+        assert state == ConversationHandler.END
+        assert update.message.reply_text.call_args.args[0] == DELETE_FAILED
+        assert '/delete' in DELETE_FAILED
+        analytics.track.assert_not_called()
+
+    def test_privacy_notice_and_help_describe_it(self):
+        from messages.strings import HELP_MESSAGE, PRIVACY_NOTICE
+        assert '/delete' in PRIVACY_NOTICE
+        assert '/delete' in HELP_MESSAGE
+        assert 'no self-serve delete' not in PRIVACY_NOTICE.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — /flag, marking an entry to raise in session
+# ---------------------------------------------------------------------------
+
+class TestToggleFlag:
+    async def _flag(self, entry):
+        from bot.handlers.journal import toggle_flag
+        update = _update('/flag')
+        with patch('bot.handlers.journal.deps.journal_svc') as journal_svc, \
+             patch('bot.handlers.journal.deps.user_svc') as user_svc, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            journal_svc.toggle_session_flag.return_value = entry
+            user_svc.get.return_value = {'timezone': 'Pacific/Kiritimati'}
+            state = await toggle_flag(update, _context())
+        return state, update.message.reply_text.call_args.args[0], analytics
+
+    async def test_flagging_confirms_which_entry_in_local_time(self):
+        # 11:00 UTC on Thu 26 Mar is already Fri 27 Mar in Kiritimati (UTC+14).
+        state, text, _ = await self._flag({'created_at': datetime(2026, 3, 26, 11, 0), 'flagged_for_session': True})
+        assert state == MAIN_MENU
+        assert 'Flagged your entry from Fri 27 Mar' in text
+
+    async def test_unflagging_says_so(self):
+        _, text, _ = await self._flag({'created_at': datetime(2026, 3, 26, 11, 0), 'flagged_for_session': False})
+        assert text.startswith('Removed the flag')
+
+    async def test_no_entries_yet(self):
+        from messages.strings import FLAG_NO_ENTRY
+        state, text, analytics = await self._flag(None)
+        assert state == MAIN_MENU
+        assert text == FLAG_NO_ENTRY
+        analytics.track.assert_not_called()
+
+    async def test_the_toggle_is_recorded_without_content(self):
+        _, _, analytics = await self._flag({'created_at': datetime(2026, 3, 26, 11, 0), 'flagged_for_session': True})
+        assert analytics.track.call_args.args[0] == 'session_flag_toggled'
+        assert analytics.track.call_args.kwargs == {'flagged': True}
+
+    def test_the_check_in_reply_points_at_it(self):
+        from messages.strings import CHECK_IN_DONE, CHECK_IN_DONE_BRIEF
+        assert '/flag' in CHECK_IN_DONE
+        assert '/flag' in CHECK_IN_DONE_BRIEF

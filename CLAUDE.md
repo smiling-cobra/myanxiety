@@ -40,25 +40,37 @@ This keeps the loop responsive; it does not make updates concurrent. Updates are
 **Conversation flow** (`bot/handlers/journal/`):
 
 - `ONBOARDING_NAME` → `ONBOARDING_TIMEZONE` → `ONBOARDING_TIME` → `ONBOARDING_THERAPY`: first-time setup (`onboarding.py`). The account is written with `onboarded=True` at the reminder-time step, so the optional cohort question that follows can be abandoned without leaving a half-created user
-- `MAIN_MENU`: persistent menu (Check In, History, Stats, Weekly Summary, Help) — `menu.py`
+- `MAIN_MENU`: persistent menu (Check In, History, Stats, Weekly Summary, Export, Help) — `menu.py`
 - `CHECK_IN_MOOD`: user rates mood 1–10 — `checkin.py`
 - `CHECK_IN_TEXT`: user writes journal entry → LLM extracts tags, generates empathetic response → entry saved → streak updated — `checkin.py`
 - `CHECK_IN_GUIDANCE_OFFER`: on a low mood score, an opt-in offer of coping guidance — `checkin.py`
+- `DELETE_CONFIRM`: `/delete` waits here for the exact confirmation button — `account.py`
+
+`/export` and `/flag` (`export.py`) are single-step commands that return to `MAIN_MENU`.
+
+**Routing.** Every command is listed both as an entry point and as a fallback, and `allow_reentry` is
+off. Do not turn it back on. Re-entry checks the entry points *before* the current state's handlers,
+and the last entry point, `recover_state`, matches any text. With re-entry on, every mood rating,
+journal entry, and onboarding answer went to recovery. `tests/test_routing.py` drives the real
+`ConversationHandler.check_update`, because handler tests that call callbacks directly cannot see this.
 
 `bot/handlers/journal/__init__.py` is a thin orchestrator: the `ConversationHandler` wiring and
 `register()`. Each responsibility lives in its own module — `states.py` (state ints and mood
 thresholds), `deps.py` (service singletons, reached as `deps.llm_svc` etc.), `errors.py`
 (`@service_errors`, the shared "fall back to main menu" decorator), `timezones.py` (IANA lookup),
-and the read-only `views.py` (history, stats, weekly summary).
+the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export`, `/flag`) and
+`account.py` (`/delete`).
 
 **Layers**:
 | Directory | Role |
 |---|---|
 | `bot/handlers/` | Telegram command and conversation handlers |
 | `bot/keyboards.py` | ReplyKeyboard definitions (main menu, mood 1–10) |
-| `services/` | Business logic — `LlmService`, `UserService`, `JournalService`, `SchedulerService`, `AnalyticsService`, `UsageService` |
+| `services/` | Business logic — `LlmService`, `UserService`, `JournalService`, `SchedulerService`, `AnalyticsService`, `UsageService`, `ExportService`, `AccountService` |
 | `services/safety.py` | `detect_crisis` — the deterministic crisis lexicon. Pure: no DB, no network, no LLM |
-| `repositories/` | MongoDB data access — `UserRepository`, `EntryRepository`, `StreakRepository`, `EventRepository`, `UsageRepository` |
+| `services/tags.py` | Tag normalisation and the canonical tag vocabulary. Pure |
+| `services/export/` | `/export` — `service.py` (load and package), `digest.py` (what the file says), `markdown.py` (how it looks) |
+| `repositories/` | MongoDB data access — `UserRepository`, `EntryRepository`, `StreakRepository`, `EventRepository`, `UsageRepository`, `NotificationRepository`, `ConversationRepository` |
 | `db/db.py` | MongoDB connection and collection accessors |
 | `bot/persistence.py` | MongoDB-backed `BasePersistence` — conversation state and an allowlisted slice of `user_data` |
 | `messages/strings.py` | All user-facing message templates |
@@ -67,9 +79,31 @@ and the read-only `views.py` (history, stats, weekly summary).
 **LLM integration** (`LlmService`):
 
 - `get_empathetic_response(mood_score, entry_text)` — 2-3 paragraph empathetic reply
-- `extract_tags(entry_text)` — returns up to 5 comma-separated theme tags
+- `extract_tags(entry_text)` — up to 5 normalised theme tags; `[]` when the call fails (see below)
 - `get_weekly_summary(entries)` — weekly pattern summary (Phase 4)
 - Model is configured via `ANTHROPIC_MODEL` (default `claude-3-5-sonnet-latest`), `max_tokens=512`
+
+`_call` answers a failed request with `FALLBACK_REPLY`, which is prose meant for a person to read.
+Anything stored as data must use `_complete`, which returns `None` on failure instead. Before this
+split, every Anthropic outage saved the apology as an entry's tags.
+
+**Tags** (`services/tags.py`): cleaning, a canonical vocabulary with variants, plural folding into
+that vocabulary only, and rejection of anything that isn't tag-shaped. It is idempotent and runs
+twice: at extraction, and in `top_tags`/`tag_counts` wherever tags are counted. Stored tags are
+therefore always read through the current vocabulary, so revising the vocabulary needs no backfill.
+The vocabulary is a first cut, to be revised against real tag data.
+
+**Export** (`ExportService`, `/export`): the last `EXPORT_DAYS` (30) local days as a Markdown document.
+It is deliberately rough v0, meant to test whether users bring it into therapy. It makes no LLM call,
+so there is no budget cost, no outage path, and no text the user didn't write. Entries flagged with
+`/flag` (`flagged_for_session`, latest entry only) are listed first.
+
+It is split in three, so the layout can be reworked (Phase 6) without touching the facts.
+`ExportService.build` loads and packages. `build_digest` turns stored entries into a frozen
+`ExportDigest` — local times, tags read through the vocabulary, the flagged subset, mood stats,
+theme counts — and is the only part of the export that knows how an entry is stored.
+`render_markdown` lays that digest out and does no arithmetic. A second format would be a sibling
+renderer over the same digest. Each layer has its own test file.
 
 **Streak logic** (`JournalService._update_streak`): increments if last check-in was yesterday, resets to 1 if gap > 1 day, no-ops if already checked in today.
 
@@ -121,9 +155,15 @@ silently reinterprets every stored row after it — on the deploy that ships the
 the main menu comes back as mid-onboarding. `tests/test_states.py` pins the values so this fails CI
 instead of production.
 
-**PII surfaces** (for the `/delete` fan-out that Phase 5 owes): `users`, `entries`, `streaks`,
-`notifications`, `ptb_conversations`, `ptb_user_data`, and now `events` and `usage`. `EventRepository`
-and `UsageRepository` both expose `delete_for_user`.
+**PII surfaces and `/delete`** (`AccountService`): `users`, `entries`, `streaks`, `notifications`,
+`usage`, `events`, `ptb_user_data` and `ptb_conversations`, deleted in that order. Every step is
+attempted, and then `DeletionIncomplete` names any failures; steps are idempotent, so a retry finishes
+the job. **A new collection must join the fan-out.** `tests/test_account_service.py` fails if any
+accessor in `db/db.py` is missing, and it scans the whole database for the id after a real-path seed.
+The handler also clears in-memory `user_data` (PTB would otherwise write it back on the next flush)
+and returns `END`, which removes the stored conversation state. Writes that are bookkeeping about a
+user, like the scheduler watermarks, use the non-upserting `UserService.update`, so a job that is
+already running cannot recreate a deleted user. `account_deleted` is tracked with no `telegram_id`.
 
 ## Environment Variables (`.env`)
 
@@ -147,6 +187,6 @@ engineering plan wins.
 - **Phase 2a — Database hardening**: not started — boot-time index creation for the existing collections, startup config validation
 - **Phase 3 — Scheduler reliability**: complete (due window, watermarks, LLM off the tick)
 - **Phase 4 — Deterministic safety and observability**: complete (crisis lexicon, event instrumentation, cohort tagging, LLM spend ceiling)
-- **Phase 5 — Data quality and user control**: not started — tag normalisation, `/export` v0, `/delete` fan-out
+- **Phase 5 — Data quality and user control**: complete (tag normalisation, fallback-prose tag leak, `/export` v0, `/delete` fan-out, `/flag`), plus a routing fix for in-conversation text
 - **Phase 6 — Productize the therapist artifact**: not started
 - **Phase 7 — Retention experiments**: blocked on 4–6 weeks of Phase 4 data
