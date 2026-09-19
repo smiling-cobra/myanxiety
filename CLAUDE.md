@@ -47,7 +47,10 @@ This keeps the loop responsive; it does not make updates concurrent. Updates are
   mood, text, crisis and guidance path, but a fixed acknowledgement instead of the LLM reply, and no streak
   line. `save_entry` returns whether the entry was the first of the day, from the same streak read that
   advances the streak. Notes are never refused, because the crisis lexicon can't read text that was never
-  written. Both LLM calls are reserved up front, and a note refunds the reply call
+  written. Both LLM calls are reserved up front, and a note refunds the reply call.
+  Once the user has checked in, the menu button reads "Add a note" (`main_menu.py`, which reads
+  `checked_in_today`). The label is only a hint, because a reply keyboard doesn't change at local
+  midnight. Both labels start an entry, and the daily reminder carries a fresh "Check In" keyboard
 - `CHECK_IN_GUIDANCE_OFFER`: on a low mood score, an opt-in offer of coping guidance — `checkin.py`
 - `DELETE_CONFIRM`: `/delete` waits here for the exact confirmation button — `account.py`
 
@@ -63,7 +66,7 @@ journal entry, and onboarding answer went to recovery. `tests/test_routing.py` d
 `register()`. Each responsibility lives in its own module — `states.py` (state ints and mood
 thresholds), `deps.py` (service singletons, reached as `deps.llm_svc` etc.), `errors.py`
 (`@service_errors`, the shared "fall back to main menu" decorator), `timezones.py` (IANA lookup),
-the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export`, `/flag`) and
+`main_menu.py` (the per-user menu keyboard), the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export`, `/flag`) and
 `account.py` (`/delete`).
 
 **Layers**:
