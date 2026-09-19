@@ -5,27 +5,36 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date, datetime
 
-from services.export.digest import DigestEntry, ExportDigest, MoodStats
+from services.export.digest import DayDigest, DigestEntry, ExportDigest, MoodStats, Theme
 from services.export.markdown import render_markdown
 
 MOMENT = datetime(2026, 9, 30, 9, 5)
+FLAT = MoodStats(average=5.0, lowest=5, highest=5)
 
 
 def _entry(text='x', mood=5, moment=MOMENT, tags=(), flagged=False) -> DigestEntry:
     return DigestEntry(moment=moment, mood=mood, text=text, tags=tuple(tags), flagged=flagged)
 
 
+def _day(*entries: DigestEntry, mood: MoodStats = FLAT) -> DayDigest:
+    return DayDigest(day=entries[0].moment.date(), entries=entries, mood=mood)
+
+
 def _render(*entries: DigestEntry, **overrides) -> str:
+    """A digest whose entries all fall on one day unless `days` is overridden.
+    The stats are fixed values rather than computed: layout is under test here."""
     entries = entries or (_entry(),)
     digest = ExportDigest(
         name='Sam',
         today=date(2026, 9, 30),
+        window_days=30,
         first_day=entries[0].moment.date(),
         last_day=entries[-1].moment.date(),
         entries=entries,
+        days=(_day(*entries),),
         flagged=tuple(e for e in entries if e.flagged),
-        day_count=1,
-        mood=MoodStats(average=5.0, lowest=5, highest=5),
+        lowest=(),
+        mood=FLAT,
         themes=(),
     )
     return render_markdown(replace(digest, **overrides))
@@ -82,15 +91,18 @@ class TestFlaggedSection:
 
 class TestSummarySection:
     def test_counts_and_mood(self):
-        text = _render(_entry(), _entry(), day_count=2, mood=MoodStats(average=17 / 3, lowest=2, highest=9))
+        first, second = _entry(), _entry(moment=datetime(2026, 9, 29, 9, 5))
+        mood = MoodStats(average=17 / 3, lowest=2, highest=9)
+        text = _render(first, second, days=(_day(second), _day(first)), mood=mood)
         assert '- **Entries:** 2 on 2 different days' in text
         assert '- **Mood:** average 5.7/10, lowest 2, highest 9' in text
 
     def test_one_day_is_singular(self):
-        assert '1 on 1 different day\n' in _render(day_count=1)
+        assert '1 on 1 different day\n' in _render()
 
     def test_themes_with_counts(self):
-        assert '- **Most common themes:** work (2), sleep (1)' in _render(themes=(('work', 2), ('sleep', 1)))
+        themes = (Theme('work', 2, 4.0), Theme('sleep', 1, 6.0))
+        assert '- **Most common themes:** work (2), sleep (1)' in _render(themes=themes)
 
     def test_no_themes(self):
         assert '- **Most common themes:** none recorded' in _render(themes=())

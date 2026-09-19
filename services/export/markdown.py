@@ -53,7 +53,7 @@ def _flagged_section(flagged: tuple[DigestEntry, ...]) -> list[str]:
 
 def _summary_section(digest: ExportDigest) -> list[str]:
     days, mood, themes = digest.day_count, digest.mood, digest.themes
-    theme_list = ', '.join(f"{tag} ({count})" for tag, count in themes) if themes else "none recorded"
+    theme_list = ', '.join(f"{t.tag} ({t.count})" for t in themes) if themes else "none recorded"
     return [
         "## At a glance",
         "",
