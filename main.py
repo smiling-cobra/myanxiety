@@ -17,6 +17,12 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 
 load_dotenv()
 
+from config import require_config
+
+# Before the imports below: they construct services, and a missing secret would
+# otherwise surface as a traceback from whichever one reads it first.
+require_config()
+
 from telegram.ext import Application
 from bot.handlers import commands, errors, journal
 from bot.persistence import MongoPersistence
