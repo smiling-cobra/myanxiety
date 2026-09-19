@@ -133,6 +133,24 @@ class SchedulerService:
     # ------------------------------------------------------------------
 
     async def _send_reminder(self, context, user: dict, today: str) -> None:
+        # A reminder to do something already done today is a nag, not a nudge.
+        # Checked here in the job rather than in the tick, so the tick stays a
+        # single scan of `users`. The watermark is still written, which closes
+        # the window exactly as a send would.
+        already = await asyncio.to_thread(
+            self._journal_svc.checked_in_today, user['telegram_id'], user.get('timezone')
+        )
+        if already:
+            await asyncio.to_thread(self._user_svc.update, user['telegram_id'], last_reminder_sent=today)
+            await asyncio.to_thread(
+                self._analytics_svc.track,
+                analytics.REMINDER_SKIPPED,
+                user['telegram_id'],
+                day=today,
+                reason='checked_in',
+            )
+            return
+
         await context.bot.send_message(
             chat_id=user['telegram_id'],
             text=REMINDER_MESSAGE.format(name=escape_md(user['name'])),

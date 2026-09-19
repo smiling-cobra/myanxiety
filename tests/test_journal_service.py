@@ -113,6 +113,44 @@ class TestTimezoneBoundaries:
         assert stored == moment
 
 
+class TestCheckedInToday:
+    """Whether today's check-in has happened, in the user's own day."""
+
+    def _checked_in_at(self, svc, moment: datetime, tz_name: str = None) -> bool:
+        with patch('services.time_utils.now', return_value=moment):
+            return svc.checked_in_today(USER, tz_name)
+
+    def test_never_checked_in(self, svc):
+        assert self._checked_in_at(svc, datetime(2026, 3, 26, 12, 0, tzinfo=UTC)) is False
+
+    def test_checked_in_earlier_today(self, svc):
+        _save_at(svc, datetime(2026, 3, 26, 9, 0, tzinfo=UTC))
+        assert self._checked_in_at(svc, datetime(2026, 3, 26, 20, 0, tzinfo=UTC)) is True
+
+    def test_yesterday_does_not_count(self, svc):
+        _save_at(svc, datetime(2026, 3, 25, 9, 0, tzinfo=UTC))
+        assert self._checked_in_at(svc, datetime(2026, 3, 26, 9, 0, tzinfo=UTC)) is False
+
+    def test_local_midnight_starts_a_new_day(self, svc):
+        # Kiritimati is UTC+14: 09:00 UTC is 23:00 local, 11:00 UTC is 01:00 the next day.
+        _set_timezone('Pacific/Kiritimati')
+        _save_at(svc, datetime(2026, 3, 26, 9, 0, tzinfo=UTC))
+        assert self._checked_in_at(svc, datetime(2026, 3, 26, 11, 0, tzinfo=UTC)) is False
+
+    def test_explicit_timezone_argument_is_used(self, svc):
+        # No user record: without the argument this would be read as UTC, and
+        # 23:00 UTC on the 25th would be "yesterday".
+        _save_at(svc, datetime(2026, 3, 25, 23, 0, tzinfo=UTC))  # 26th, 08:00 in Tokyo
+        moment = datetime(2026, 3, 26, 3, 0, tzinfo=UTC)          # 26th, 12:00 in Tokyo
+        assert self._checked_in_at(svc, moment, 'Asia/Tokyo') is True
+        assert self._checked_in_at(svc, moment) is False
+
+    def test_is_user_scoped(self, svc):
+        with patch('services.time_utils.now', return_value=datetime(2026, 3, 26, 9, 0, tzinfo=UTC)):
+            svc.save_entry(999, 5, "someone else's")
+        assert self._checked_in_at(svc, datetime(2026, 3, 26, 12, 0, tzinfo=UTC)) is False
+
+
 class TestWeeklyEntries:
     def _frozen(self, svc, now, **kwargs):
         with patch('services.time_utils.now', return_value=now):

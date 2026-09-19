@@ -51,6 +51,9 @@ def _svc() -> SchedulerService:
     svc = SchedulerService.__new__(SchedulerService)
     svc._user_svc = MagicMock()
     svc._journal_svc = MagicMock()
+    # A bare MagicMock is truthy, which would read as "already checked in" and
+    # silently skip every reminder under test.
+    svc._journal_svc.checked_in_today.return_value = False
     svc._llm_svc = MagicMock()
     svc._analytics_svc = MagicMock()
     # The default answer is "under budget": every test that is not about the
@@ -452,6 +455,44 @@ class TestSendReminder:
         with _at(9, 0, '2026-03-28'):
             await _tick_and_deliver(svc, ctx)
         assert ctx.bot.send_message.call_count == 2
+
+
+class TestReminderAfterCheckIn:
+    """Someone who has already checked in today is not reminded to."""
+
+    async def test_no_reminder_when_already_checked_in(self):
+        svc = _svc()
+        svc._journal_svc.checked_in_today.return_value = True
+        ctx = _context()
+        await svc._send_reminder(ctx, _user(), '2026-03-28')
+        ctx.bot.send_message.assert_not_called()
+
+    async def test_the_check_uses_the_users_timezone(self):
+        svc = _svc()
+        ctx = _context()
+        await svc._send_reminder(ctx, _user(timezone='Asia/Tokyo'), '2026-03-28')
+        svc._journal_svc.checked_in_today.assert_called_once_with(1, 'Asia/Tokyo')
+
+    async def test_a_skip_still_closes_the_window(self):
+        svc = _svc()
+        svc._journal_svc.checked_in_today.return_value = True
+        svc._user_svc = _FakeUserService(_user(last_weekly_summary_check='2026-03-28'))
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        with _at(9, 5, '2026-03-28'):
+            await svc._tick(ctx)
+        assert ctx.job_queue.scheduled == []
+        assert svc._journal_svc.checked_in_today.call_count == 1
+
+    async def test_a_skip_is_recorded_not_as_a_send(self):
+        svc = _svc()
+        svc._journal_svc.checked_in_today.return_value = True
+        ctx = _context()
+        await svc._send_reminder(ctx, _user(), '2026-03-28')
+        tracked = _tracked(svc)
+        assert tracked['reminder_skipped'] == {'day': '2026-03-28', 'reason': 'checked_in'}
+        assert 'reminder_sent' not in tracked
 
 
 class TestSendWeeklySummary:
