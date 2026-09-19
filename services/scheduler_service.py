@@ -5,6 +5,7 @@ import logging
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from bot.keyboards import get_main_menu_keyboard
 from messages.markdown import escape_md
 from messages.strings import REMINDER_MESSAGE, WEEKLY_SUMMARY_NOTIFICATION
 from services import analytics_service as analytics
@@ -151,10 +152,14 @@ class SchedulerService:
             )
             return
 
+        # Only someone who hasn't checked in today gets this far, so "Check In" is
+        # the right label, and sending it replaces yesterday's "Add a note",
+        # which a keyboard keeps showing past midnight.
         await context.bot.send_message(
             chat_id=user['telegram_id'],
             text=REMINDER_MESSAGE.format(name=escape_md(user['name'])),
             parse_mode='Markdown',
+            reply_markup=get_main_menu_keyboard(),
         )
         await asyncio.to_thread(
             self._user_svc.update,

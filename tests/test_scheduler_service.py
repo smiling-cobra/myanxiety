@@ -421,6 +421,14 @@ class TestSendReminder:
         await svc._send_reminder(ctx, _user(name='Bob'), '2026-03-28')
         assert 'Bob' in ctx.bot.send_message.call_args.kwargs['text']
 
+    async def test_resets_the_menu_button_to_check_in(self):
+        """Yesterday's keyboard still says "Add a note"; the reminder replaces it."""
+        from bot.keyboards import CHECK_IN
+        svc = _svc()
+        ctx = _context()
+        await svc._send_reminder(ctx, _user(), '2026-03-28')
+        assert ctx.bot.send_message.call_args.kwargs['reply_markup'].keyboard[0][0].text == CHECK_IN
+
     async def test_message_escapes_markdown_special_chars_in_name(self):
         svc = _svc()
         ctx = _context()
