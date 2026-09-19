@@ -12,7 +12,9 @@ from bot.keyboards import (
     CHECK_IN, EXPORT, HELP, HISTORY, MAIN_MENU_CHOICES, STATS, WEEKLY_SUMMARY,
     get_main_menu_keyboard, get_mood_keyboard,
 )
-from messages.strings import CANCEL_MESSAGE, CHECK_IN_MOOD_PROMPT, HELP_MESSAGE, MAIN_MENU_MESSAGE
+from messages.strings import (
+    CANCEL_MESSAGE, CHECK_IN_MOOD_PROMPT, HELP_MESSAGE, MAIN_MENU_MESSAGE, NOTE_MOOD_PROMPT,
+)
 
 
 def _name(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -24,10 +26,11 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     name = _name(context)
 
     if choice == CHECK_IN:
-        await update.message.reply_text(
-            CHECK_IN_MOOD_PROMPT.format(name=name),
-            reply_markup=get_mood_keyboard()
-        )
+        # Wording only. Whether the entry counts as the daily check-in or a note
+        # is decided when it is saved, which may fall after local midnight.
+        noted = await asyncio.to_thread(deps.journal_svc.checked_in_today, update.effective_user.id)
+        prompt = NOTE_MOOD_PROMPT if noted else CHECK_IN_MOOD_PROMPT
+        await update.message.reply_text(prompt.format(name=name), reply_markup=get_mood_keyboard())
         return CHECK_IN_MOOD
 
     if choice == HISTORY:

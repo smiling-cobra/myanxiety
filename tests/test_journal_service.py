@@ -74,6 +74,32 @@ class TestStreakLogic:
         assert svc.get_stats(USER)['streak'] == 2
 
 
+class TestFirstOfDay:
+    """save_entry reports whether the entry is the day's check-in or a later note."""
+
+    def test_first_entry_ever_is_first_of_day(self, svc):
+        assert _save_at_returning(svc, datetime(2026, 3, 26, 9, 0, tzinfo=UTC)) is True
+
+    def test_second_entry_same_day_is_not(self, svc):
+        _save_at(svc, datetime(2026, 3, 26, 9, 0, tzinfo=UTC))
+        assert _save_at_returning(svc, datetime(2026, 3, 26, 20, 0, tzinfo=UTC)) is False
+
+    def test_next_day_is_first_again(self, svc):
+        _save_at(svc, datetime(2026, 3, 26, 9, 0, tzinfo=UTC))
+        assert _save_at_returning(svc, datetime(2026, 3, 27, 9, 0, tzinfo=UTC)) is True
+
+    def test_the_day_is_the_users_own(self, svc):
+        # Niue is UTC-11: both instants are the 26th locally, across two UTC days.
+        _set_timezone('Pacific/Niue')
+        _save_at(svc, datetime(2026, 3, 26, 22, 0, tzinfo=UTC))
+        assert _save_at_returning(svc, datetime(2026, 3, 27, 9, 0, tzinfo=UTC)) is False
+
+
+def _save_at_returning(svc: JournalService, moment: datetime) -> bool:
+    with patch('services.time_utils.now', return_value=moment):
+        return svc.save_entry(USER, 5, "entry")
+
+
 class TestTimezoneBoundaries:
     """Day boundaries follow the user, not UTC."""
 

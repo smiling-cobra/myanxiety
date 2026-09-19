@@ -1684,3 +1684,120 @@ class TestToggleFlag:
         from messages.strings import CHECK_IN_DONE, CHECK_IN_DONE_BRIEF
         assert '/flag' in CHECK_IN_DONE
         assert '/flag' in CHECK_IN_DONE_BRIEF
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — the daily check-in and later notes
+#
+# The first entry of the local day is the check-in; any later one is a note.
+# Notes are never refused — only the reply and the streak line are dropped —
+# so everything that protects a user still runs on them.
+# ---------------------------------------------------------------------------
+
+class TestNotes:
+    @staticmethod
+    def _tracked(mock_analytics) -> dict:
+        return {c.args[0]: c.kwargs for c in mock_analytics.track.call_args_list}
+
+    async def _run(self, mood_score: int = 6, text: str = 'Something came up', first_of_day: bool = False):
+        ctx = _context({'name': 'Alice', 'mood_score': mood_score})
+        update = _update(text)
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            usage.consume_llm.return_value = True
+            mock_svc.save_entry.return_value = first_of_day
+            mock_svc.get_stats.return_value = {'streak': 3, 'total': 5, 'avg_mood': mood_score}
+            mock_llm.extract_tags.return_value = ['work']
+            mock_llm.get_empathetic_response.return_value = 'A reflection.'
+            state = await handle_entry_text(update, ctx)
+        sent = [c.args[0] for c in update.message.reply_text.call_args_list]
+        return state, sent, usage, analytics, mock_svc, mock_llm
+
+    async def test_a_note_is_saved_with_its_tags(self):
+        _, _, _, _, mock_svc, _ = await self._run()
+        assert mock_svc.save_entry.call_args.args[3] == ['work']
+
+    async def test_a_note_gets_no_reflection(self):
+        _, sent, _, _, _, mock_llm = await self._run()
+        mock_llm.get_empathetic_response.assert_not_called()
+        assert 'A reflection.' not in sent[-1]
+
+    async def test_a_note_is_acknowledged_without_a_streak_line(self):
+        from messages.strings import NOTE_SAVED
+        _, sent, _, _, _, _ = await self._run()
+        assert sent[-1] == NOTE_SAVED.format(name='Alice')
+        assert 'in a row' not in sent[-1]
+
+    async def test_a_note_hands_back_the_reply_call(self):
+        """Both calls are reserved before the save; only the tag call was spent."""
+        _, _, usage, _, _, _ = await self._run()
+        usage.refund.assert_called_once()
+        assert usage.refund.call_args.args[1] == 1
+
+    async def test_a_note_at_the_ceiling_refunds_nothing(self):
+        ctx = _context({'name': 'Alice', 'mood_score': 6})
+        with patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc'):
+            usage.consume_llm.return_value = False
+            mock_svc.save_entry.return_value = False
+            mock_svc.get_stats.return_value = {'streak': 3, 'total': 5, 'avg_mood': 6}
+            await handle_entry_text(_update('x'), ctx)
+        usage.refund.assert_not_called()
+
+    async def test_the_daily_check_in_still_gets_its_reflection(self):
+        _, sent, usage, _, _, mock_llm = await self._run(first_of_day=True)
+        mock_llm.get_empathetic_response.assert_called_once()
+        assert 'A reflection.' in sent[-1]
+        usage.refund.assert_not_called()
+
+    async def test_crisis_resources_fire_on_a_note(self):
+        _, sent, _, _, _, _ = await self._run(mood_score=7, text='I want to die')
+        assert GUIDANCE_CRISIS_RESOURCES in sent
+
+    async def test_a_low_mood_note_still_offers_guidance(self):
+        state, _, _, _, _, _ = await self._run(mood_score=3)
+        assert state == CHECK_IN_GUIDANCE_OFFER
+
+    async def test_the_event_says_which_kind(self):
+        _, _, _, note_analytics, _, _ = await self._run()
+        _, _, _, daily_analytics, _, _ = await self._run(first_of_day=True)
+        assert self._tracked(note_analytics)['check_in_completed']['kind'] == 'note'
+        assert self._tracked(daily_analytics)['check_in_completed']['kind'] == 'daily'
+
+    async def test_second_entry_of_the_day_is_a_note_end_to_end(self):
+        """Through the real JournalService: the streak store decides, not a mock."""
+        from messages.strings import NOTE_SAVED
+        replies = []
+        with patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+            mock_llm.extract_tags.return_value = []
+            mock_llm.get_empathetic_response.return_value = 'A reflection.'
+            for text in ('morning', 'afternoon'):
+                update = _update(text)
+                await handle_entry_text(update, _context({'name': 'Alice', 'mood_score': 6}))
+                replies.append(update.message.reply_text.call_args.args[0])
+        assert 'A reflection.' in replies[0]
+        assert replies[1] == NOTE_SAVED.format(name='Alice')
+        assert mock_llm.get_empathetic_response.call_count == 1
+
+
+class TestCheckInPromptAfterCheckingIn:
+    async def _prompt(self, checked_in: bool) -> str:
+        from bot.handlers.journal import handle_main_menu
+        from bot.keyboards import CHECK_IN
+        update = _update(CHECK_IN)
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc:
+            mock_svc.checked_in_today.return_value = checked_in
+            state = await handle_main_menu(update, _context({'name': 'Sam'}))
+        assert state == CHECK_IN_MOOD
+        return update.message.reply_text.call_args.args[0]
+
+    async def test_first_of_the_day_asks_for_the_check_in(self):
+        from messages.strings import CHECK_IN_MOOD_PROMPT
+        assert await self._prompt(False) == CHECK_IN_MOOD_PROMPT.format(name='Sam')
+
+    async def test_later_in_the_day_offers_a_note(self):
+        from messages.strings import NOTE_MOOD_PROMPT
+        assert await self._prompt(True) == NOTE_MOOD_PROMPT.format(name='Sam')

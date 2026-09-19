@@ -69,6 +69,13 @@ CHECK_IN_MOOD_PROMPT = (
     "Rate your mood from 1 to 10 👇"
 )
 
+# Shown instead of CHECK_IN_MOOD_PROMPT once today's check-in is done. Later
+# entries are welcome — they are saved as notes on the day, without a reply.
+NOTE_MOOD_PROMPT = (
+    "You've already checked in today, {name} — want to add a note about what's come up since?\n\n"
+    "Rate how you're feeling right now, from 1 to 10 👇"
+)
+
 CHECK_IN_TEXT_PROMPT = (
     "Got it — a {score}/10. 📝\n\n"
     "Tell me what's on your mind. What's been going on?"
@@ -91,6 +98,14 @@ CHECK_IN_DONE_BRIEF = (
     "this time — but what you wrote is safely in your journal, and I'll be back to normal "
     "tomorrow.\n\n"
     "_{streak} day(s) in a row. Keep it up!_\n\n"
+    "Want to talk about this in therapy? Send /flag."
+)
+
+# The reply to a note: a later entry on a day that already has its check-in.
+# Deliberately brief — no reflection and no streak line. The note is in the
+# journal and in the export either way.
+NOTE_SAVED = (
+    "Noted, {name} — added to today's journal. 📝\n\n"
     "Want to talk about this in therapy? Send /flag."
 )
 
