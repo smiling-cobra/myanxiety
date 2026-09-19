@@ -80,6 +80,8 @@ thresholds), `deps.py` (service singletons, reached as `deps.llm_svc` etc.), `er
 | `services/export/` | `/export` — `service.py` (load and package), `digest.py` (what the file says), `markdown.py` (how it looks) |
 | `repositories/` | MongoDB data access — `UserRepository`, `EntryRepository`, `StreakRepository`, `EventRepository`, `UsageRepository`, `NotificationRepository`, `ConversationRepository` |
 | `db/db.py` | MongoDB connection and collection accessors |
+| `db/indexes.py` | `ensure_indexes`, run at boot: the per-user indexes for `users`, `entries`, `streaks`, `notifications`, `ptb_conversations` |
+| `config.py` | `require_config`, run in `main.py` before any service is imported |
 | `bot/persistence.py` | MongoDB-backed `BasePersistence` — conversation state and an allowlisted slice of `user_data` |
 | `messages/strings.py` | All user-facing message templates |
 | `messages/markdown.py` | `escape_md` — Markdown v1 escaping, shared by `bot/` and `services/` |
@@ -190,6 +192,16 @@ MONGODB_URI
 ANTHROPIC_MODEL (optional)
 ```
 
+`main.py` checks the first three before importing anything, and exits naming every one that is unset or
+blank. At boot, `ensure_indexes` pings the database, and an unreachable one fails the boot. It then
+creates the indexes. One that can't be built, most likely because duplicate rows exist under a unique
+index, is logged and skipped: queries still work, just by scanning. `events` and `usage` create their
+own indexes on first write, because theirs carry behaviour (TTL retention, and the unique key behind
+the LLM budget counter). A new per-user query path needs an entry in `db/indexes.py`.
+
+`load_dotenv` finds the repo's `.env` by walking up from `main.py`, whatever the working directory or
+shell environment. Starting the bot locally therefore uses whatever token and database `.env` holds.
+
 ## Roadmap Status
 
 Phase numbers follow [docs/development-plan.md](docs/development-plan.md), which is the canonical
@@ -200,7 +212,7 @@ engineering plan wins.
 - **Phase 0 — Safety and delivery baseline**: complete (CI gate, single Fly instance, crisis hotfix, consent notice)
 - **Phase 1 — PTB v13 → v20+ migration**: complete, with the test harness migrated in lockstep
 - **Phase 2 — Time correctness and state resilience**: complete (local-day rules, `MongoPersistence`, global error handler)
-- **Phase 2a — Database hardening**: not started — boot-time index creation for the existing collections, startup config validation
+- **Phase 2a — Database hardening**: complete (boot-time indexes, startup config validation)
 - **Phase 3 — Scheduler reliability**: complete (due window, watermarks, LLM off the tick)
 - **Phase 4 — Deterministic safety and observability**: complete (crisis lexicon, event instrumentation, cohort tagging, LLM spend ceiling)
 - **Phase 5 — Data quality and user control**: complete (tag normalisation, fallback-prose tag leak, `/export` v0, `/delete` fan-out, `/flag`), plus a routing fix for in-conversation text
