@@ -234,8 +234,9 @@ EXPORT_EMPTY = (
 # caption limit. Plain text: captions are not parsed as Markdown here.
 EXPORT_CAPTION = (
     "Your journal for the last {days} days — {count} {entries}.\n\n"
-    "It's a plain text file you can open on your phone, print, or show to your therapist. "
-    "It has everything you wrote in full, so share it only with people you trust."
+    "The top is a short summary for your therapist to read before a session — anything you "
+    "flagged, your mood day by day, and the themes that came up. Everything you wrote follows "
+    "in full, so share it only with people you trust."
 )
 
 FLAG_SET = (
