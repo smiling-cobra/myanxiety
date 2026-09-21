@@ -1828,11 +1828,14 @@ class TestNotes:
 
 
 class TestCheckInPromptAfterCheckingIn:
-    async def _prompt(self, checked_in: bool, label: str = '📝 Check In') -> str:
+    async def _prompt(self, checked_in, label: str = '📝 Check In') -> str:
         from bot.handlers.journal import handle_main_menu
         update = _update(label)
         with patch('bot.handlers.journal.deps.journal_svc') as mock_svc:
-            mock_svc.checked_in_today.return_value = checked_in
+            if isinstance(checked_in, Exception):
+                mock_svc.checked_in_today.side_effect = checked_in
+            else:
+                mock_svc.checked_in_today.return_value = checked_in
             state = await handle_main_menu(update, _context({'name': 'Sam'}))
         assert state == CHECK_IN_MOOD
         return update.message.reply_text.call_args.args[0]
@@ -1850,6 +1853,11 @@ class TestCheckInPromptAfterCheckingIn:
         from bot.keyboards import ADD_NOTE
         from messages.strings import CHECK_IN_MOOD_PROMPT
         assert await self._prompt(False, label=ADD_NOTE) == CHECK_IN_MOOD_PROMPT.format(name='Sam')
+
+    async def test_a_failed_read_still_starts_an_entry(self):
+        """The read only picks the wording, so it must not cost the user their tap."""
+        from messages.strings import CHECK_IN_MOOD_PROMPT
+        assert await self._prompt(RuntimeError('mongo down')) == CHECK_IN_MOOD_PROMPT.format(name='Sam')
 
 
 def _entry_button(reply_markup) -> str:

@@ -4,7 +4,7 @@ from telegram import ReplyKeyboardRemove, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.handlers.journal import deps
-from bot.handlers.journal.main_menu import main_menu_keyboard
+from bot.handlers.journal.main_menu import checked_in_today, main_menu_keyboard
 from bot.handlers.journal.onboarding import start
 from bot.handlers.journal.states import CHECK_IN_MOOD, MAIN_MENU
 from bot.handlers.journal.export import send_export
@@ -30,10 +30,7 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # outlive the day it was sent on. Whether the entry counts as the daily
         # check-in or a note is decided when it is saved, which may fall after
         # local midnight.
-        try:
-            noted = await asyncio.to_thread(deps.journal_svc.checked_in_today, update.effective_user.id)
-        except Exception:
-            noted = False
+        noted = await checked_in_today(update.effective_user.id)
         prompt = NOTE_MOOD_PROMPT if noted else CHECK_IN_MOOD_PROMPT
         await update.message.reply_text(prompt.format(name=name), reply_markup=get_mood_keyboard())
         return CHECK_IN_MOOD
