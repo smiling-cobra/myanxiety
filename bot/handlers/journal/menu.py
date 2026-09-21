@@ -30,7 +30,10 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # outlive the day it was sent on. Whether the entry counts as the daily
         # check-in or a note is decided when it is saved, which may fall after
         # local midnight.
-        noted = await asyncio.to_thread(deps.journal_svc.checked_in_today, update.effective_user.id)
+        try:
+            noted = await asyncio.to_thread(deps.journal_svc.checked_in_today, update.effective_user.id)
+        except Exception:
+            noted = False
         prompt = NOTE_MOOD_PROMPT if noted else CHECK_IN_MOOD_PROMPT
         await update.message.reply_text(prompt.format(name=name), reply_markup=get_mood_keyboard())
         return CHECK_IN_MOOD
