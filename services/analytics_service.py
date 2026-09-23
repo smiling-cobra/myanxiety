@@ -56,6 +56,7 @@ GUIDANCE_DECLINED = 'guidance_declined'
 
 # Scheduled delivery
 REMINDER_SENT = 'reminder_sent'
+REMINDER_SKIPPED = 'reminder_skipped'
 WEEKLY_SUMMARY_SENT = 'weekly_summary_sent'
 WEEKLY_SUMMARY_SKIPPED = 'weekly_summary_skipped'
 

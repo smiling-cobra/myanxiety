@@ -42,7 +42,15 @@ This keeps the loop responsive; it does not make updates concurrent. Updates are
 - `ONBOARDING_NAME` → `ONBOARDING_TIMEZONE` → `ONBOARDING_TIME` → `ONBOARDING_THERAPY`: first-time setup (`onboarding.py`). The account is written with `onboarded=True` at the reminder-time step, so the optional cohort question that follows can be abandoned without leaving a half-created user
 - `MAIN_MENU`: persistent menu (Check In, History, Stats, Weekly Summary, Export, Help) — `menu.py`
 - `CHECK_IN_MOOD`: user rates mood 1–10 — `checkin.py`
-- `CHECK_IN_TEXT`: user writes journal entry → LLM extracts tags, generates empathetic response → entry saved → streak updated — `checkin.py`
+- `CHECK_IN_TEXT`: user writes journal entry → LLM extracts tags → entry saved → streak updated → empathetic response — `checkin.py`.
+  The first entry of the user's local day is the *daily check-in*. Any later entry that day is a *note*: same
+  mood, text, crisis and guidance path, but a fixed acknowledgement instead of the LLM reply, and no streak
+  line. `save_entry` returns whether the entry was the first of the day, from the same streak read that
+  advances the streak. Notes are never refused, because the crisis lexicon can't read text that was never
+  written. Both LLM calls are reserved up front, and a note refunds the reply call.
+  Once the user has checked in, the menu button reads "Add a note" (`main_menu.py`, which reads
+  `checked_in_today`). The label is only a hint, because a reply keyboard doesn't change at local
+  midnight. Both labels start an entry, and the daily reminder carries a fresh "Check In" keyboard
 - `CHECK_IN_GUIDANCE_OFFER`: on a low mood score, an opt-in offer of coping guidance — `checkin.py`
 - `DELETE_CONFIRM`: `/delete` waits here for the exact confirmation button — `account.py`
 
@@ -58,7 +66,7 @@ journal entry, and onboarding answer went to recovery. `tests/test_routing.py` d
 `register()`. Each responsibility lives in its own module — `states.py` (state ints and mood
 thresholds), `deps.py` (service singletons, reached as `deps.llm_svc` etc.), `errors.py`
 (`@service_errors`, the shared "fall back to main menu" decorator), `timezones.py` (IANA lookup),
-the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export`, `/flag`) and
+`main_menu.py` (the per-user menu keyboard), the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export`, `/flag`) and
 `account.py` (`/delete`).
 
 **Layers**:
@@ -94,14 +102,21 @@ therefore always read through the current vocabulary, so revising the vocabulary
 The vocabulary is a first cut, to be revised against real tag data.
 
 **Export** (`ExportService`, `/export`): the last `EXPORT_DAYS` (30) local days as a Markdown document.
-It is deliberately rough v0, meant to test whether users bring it into therapy. It makes no LLM call,
+It exists to test whether users bring their journal into therapy. It makes no LLM call,
 so there is no budget cost, no outage path, and no text the user didn't write. Entries flagged with
 `/flag` (`flagged_for_session`, latest entry only) are listed first.
 
-It is split in three, so the layout can be reworked (Phase 6) without touching the facts.
+The file opens with a brief meant to be read in about ninety seconds before a session: what to raise,
+at a glance (days written out of the window, mood, themes with the average mood of their entries),
+lowest points, and mood by day. The full entries follow, grouped by day. The layout is a first cut:
+the engineering plan recommends talking to therapists before settling it, and only `markdown.py` would
+need to change.
+
+It is split in three, so the layout can be reworked without touching the facts.
 `ExportService.build` loads and packages. `build_digest` turns stored entries into a frozen
-`ExportDigest` — local times, tags read through the vocabulary, the flagged subset, mood stats,
-theme counts — and is the only part of the export that knows how an entry is stored.
+`ExportDigest` — local times, tags read through the vocabulary, entries grouped by day, the flagged
+subset, the lowest entries, mood stats, theme counts with mood averages — and is the only part of the
+export that knows how an entry is stored.
 `render_markdown` lays that digest out and does no arithmetic. A second format would be a sibling
 renderer over the same digest. Each layer has its own test file.
 
@@ -118,7 +133,8 @@ the window for the rest of the local day and survive a restart. `last_weekly_sum
 because the "too few entries this week" outcome writes no `_sent` watermark and would otherwise
 re-scan on every tick. A job that raises writes no watermark, so the next tick retries it; the
 window bounds those retries. Unlike `time_utils.resolve_timezone`, an unusable timezone here
-suppresses the send rather than falling back to UTC.
+suppresses the send rather than falling back to UTC. A user who has already checked in today gets no
+reminder: the job writes the watermark and records `reminder_skipped` instead.
 
 **Safety** (`services/safety.py`, `checkin.py`): crisis resources are triggered by two independent
 signals — a mood score at or below `CRISIS_MOOD_THRESHOLD`, and `detect_crisis` matching the entry
@@ -188,5 +204,5 @@ engineering plan wins.
 - **Phase 3 — Scheduler reliability**: complete (due window, watermarks, LLM off the tick)
 - **Phase 4 — Deterministic safety and observability**: complete (crisis lexicon, event instrumentation, cohort tagging, LLM spend ceiling)
 - **Phase 5 — Data quality and user control**: complete (tag normalisation, fallback-prose tag leak, `/export` v0, `/delete` fan-out, `/flag`), plus a routing fix for in-conversation text
-- **Phase 6 — Productize the therapist artifact**: not started
+- **Phase 6 — Productize the therapist artifact**: complete (export brief, onboarding and copy, daily check-in vs. notes, reminder skip)
 - **Phase 7 — Retention experiments**: blocked on 4–6 weeks of Phase 4 data

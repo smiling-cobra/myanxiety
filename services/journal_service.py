@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, tzinfo
+from datetime import date, datetime, time, timedelta, tzinfo
 
 from repositories.entry_repo import EntryRepository
 from repositories.streak_repo import StreakRepository
@@ -24,7 +24,14 @@ class JournalService:
         self._streaks = StreakRepository()
         self._users = UserRepository()
 
-    def save_entry(self, telegram_id: int, mood_score: int, text: str, tags: list = None) -> None:
+    def save_entry(self, telegram_id: int, mood_score: int, text: str, tags: list = None) -> bool:
+        """Save an entry. True if it is the user's first of their local day.
+
+        The first entry of the day is the daily check-in; any later one is a
+        note. The answer comes from the same streak read that decides the day,
+        at the same instant, so an entry begun before local midnight and sent
+        after it is classified by when it was saved.
+        """
         now = time_utils.now()
         entry = {
             'telegram_id': telegram_id,
@@ -36,7 +43,7 @@ class JournalService:
         self._entries.save(entry)
         # Same instant for both, so an entry can never land on one side of a day
         # boundary and its own streak update on the other.
-        self._update_streak(telegram_id, now)
+        return self._update_streak(telegram_id, now)
 
     def get_recent_entries(self, telegram_id: int, limit: int = 7) -> list:
         return self._entries.find_recent(telegram_id, limit)
@@ -74,6 +81,12 @@ class JournalService:
         entry['flagged_for_session'] = flagged
         return entry
 
+    def checked_in_today(self, telegram_id: int, user_timezone: str = None) -> bool:
+        """Whether the user has already written an entry today, in their own day."""
+        tz = self._timezone_for(telegram_id, user_timezone)
+        today = time_utils.now().astimezone(tz).date()
+        return self._last_check_in_day(self._streaks.get_full(telegram_id), tz) == today
+
     def get_stats(self, telegram_id: int) -> dict:
         return {
             'streak': self._streaks.get(telegram_id),
@@ -81,22 +94,31 @@ class JournalService:
             'avg_mood': self._entries.average_mood(telegram_id),
         }
 
-    def _update_streak(self, telegram_id: int, now: datetime = None) -> None:
+    def _update_streak(self, telegram_id: int, now: datetime = None) -> bool:
+        """Advance the streak for a check-in at `now`. True if it is the first of that local day."""
         now = now or time_utils.now()
         tz = self._timezone_for(telegram_id)
         today = now.astimezone(tz).date()
 
         doc = self._streaks.get_full(telegram_id)
-        if doc is None:
+        last = self._last_check_in_day(doc, tz)
+        if last is None:
             self._streaks.update(telegram_id, 1, now)
-            return
+            return True
 
-        last = time_utils.to_local(doc['last_check_in'], tz).date()
         if last == today:
-            return  # already checked in today, in the user's own day
+            return False  # already checked in today, in the user's own day
 
         new_streak = doc['streak'] + 1 if last == today - timedelta(days=1) else 1
         self._streaks.update(telegram_id, new_streak, now)
+        return True
+
+    @staticmethod
+    def _last_check_in_day(streak_doc: dict | None, tz: tzinfo) -> date | None:
+        """The local day of the last check-in, or None if there has never been one."""
+        if streak_doc is None:
+            return None
+        return time_utils.to_local(streak_doc['last_check_in'], tz).date()
 
     def _timezone_for(self, telegram_id: int, name: str = None) -> tzinfo:
         if name is None:

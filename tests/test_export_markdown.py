@@ -5,27 +5,36 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date, datetime
 
-from services.export.digest import DigestEntry, ExportDigest, MoodStats
+from services.export.digest import DayDigest, DigestEntry, ExportDigest, MoodStats, Theme
 from services.export.markdown import render_markdown
 
 MOMENT = datetime(2026, 9, 30, 9, 5)
+FLAT = MoodStats(average=5.0, lowest=5, highest=5)
 
 
 def _entry(text='x', mood=5, moment=MOMENT, tags=(), flagged=False) -> DigestEntry:
     return DigestEntry(moment=moment, mood=mood, text=text, tags=tuple(tags), flagged=flagged)
 
 
+def _day(*entries: DigestEntry, mood: MoodStats = FLAT) -> DayDigest:
+    return DayDigest(day=entries[0].moment.date(), entries=entries, mood=mood)
+
+
 def _render(*entries: DigestEntry, **overrides) -> str:
+    """A digest whose entries all fall on one day unless `days` is overridden.
+    The stats are fixed values rather than computed: layout is under test here."""
     entries = entries or (_entry(),)
     digest = ExportDigest(
         name='Sam',
         today=date(2026, 9, 30),
+        window_days=30,
         first_day=entries[0].moment.date(),
         last_day=entries[-1].moment.date(),
         entries=entries,
+        days=(_day(*entries),),
         flagged=tuple(e for e in entries if e.flagged),
-        day_count=1,
-        mood=MoodStats(average=5.0, lowest=5, highest=5),
+        lowest=(),
+        mood=FLAT,
         themes=(),
     )
     return render_markdown(replace(digest, **overrides))
@@ -48,9 +57,12 @@ class TestHeader:
 
 
 class TestSectionOrder:
-    def test_flagged_summary_chart_entries_footer(self):
-        text = _render(_entry(flagged=True))
-        markers = ['## To raise in session', '## At a glance', '## Mood by entry', '## Entries', '---']
+    def test_brief_then_entries_then_footer(self):
+        entry = _entry(flagged=True)
+        text = _render(entry, lowest=(entry,))
+        markers = [
+            '## To raise in session', '## At a glance', '## Lowest points', '## Mood by day', '## Entries', '---',
+        ]
         positions = [text.index(m) for m in markers]
         assert positions == sorted(positions)
 
@@ -58,7 +70,9 @@ class TestSectionOrder:
         assert 'To raise in session' not in _render(_entry(), _entry())
 
     def test_sections_are_separated_by_one_blank_line(self):
-        assert '\n\n\n' not in _render(_entry('a', flagged=True, tags=['work']))
+        entry = _entry('a', flagged=True, tags=['work'])
+        assert '\n\n\n' not in _render(entry, lowest=(entry,), themes=(Theme('work', 1, 5.0),))
+        assert '\n\n\n' not in _render()
         assert _render().endswith('._\n')
 
 
@@ -81,39 +95,80 @@ class TestFlaggedSection:
 
 
 class TestSummarySection:
-    def test_counts_and_mood(self):
-        text = _render(_entry(), _entry(), day_count=2, mood=MoodStats(average=17 / 3, lowest=2, highest=9))
-        assert '- **Entries:** 2 on 2 different days' in text
+    def test_days_written_out_of_the_window_and_mood(self):
+        first, second = _entry(), _entry(moment=datetime(2026, 9, 29, 9, 5))
+        mood = MoodStats(average=17 / 3, lowest=2, highest=9)
+        text = _render(first, second, days=(_day(second), _day(first)), mood=mood)
+        assert '- **Wrote on:** 2 of the last 30 days (2 entries)' in text
         assert '- **Mood:** average 5.7/10, lowest 2, highest 9' in text
 
-    def test_one_day_is_singular(self):
-        assert '1 on 1 different day\n' in _render(day_count=1)
+    def test_one_entry_is_singular(self):
+        assert '(1 entry)' in _render()
 
-    def test_themes_with_counts(self):
-        assert '- **Most common themes:** work (2), sleep (1)' in _render(themes=(('work', 2), ('sleep', 1)))
+    def test_each_theme_with_its_count_and_average_mood(self):
+        themes = (Theme('work', 8, 4.125), Theme('sleep', 1, 6.0))
+        section = _section(_render(themes=themes), 'At a glance')
+        assert '- **Most common themes:**\n  - work — 8 entries, average mood 4.1\n' in section
+        assert '  - sleep — 1 entry, average mood 6.0' in section
 
     def test_no_themes(self):
         assert '- **Most common themes:** none recorded' in _render(themes=())
 
 
+class TestLowestSection:
+    def test_lists_the_entries_it_is_given(self):
+        low = _entry('a very hard evening', mood=2, moment=datetime(2026, 9, 30, 22, 15))
+        section = _section(_render(_entry(), low, lowest=(low,)), 'Lowest points')
+        assert '- Wed 30 Sep 2026, 22:15 — mood 2/10: a very hard evening' in section
+
+    def test_absent_when_empty(self):
+        assert 'Lowest points' not in _render(lowest=())
+
+
 class TestMoodChart:
-    def test_one_fenced_row_per_entry(self):
-        text = _render(_entry(mood=3), _entry(mood=10, moment=datetime(2026, 9, 30, 21, 40)))
-        assert '```\nWed 30 Sep 09:05  ▓▓▓░░░░░░░  3/10\nWed 30 Sep 21:40  ▓▓▓▓▓▓▓▓▓▓  10/10\n```' in text
+    def test_one_row_per_day(self):
+        monday = _entry(mood=3, moment=datetime(2026, 9, 28, 9, 0))
+        wednesday = _entry(mood=10, moment=datetime(2026, 9, 30, 21, 40))
+        days = (_day(monday, mood=MoodStats(3, 3, 3)), _day(wednesday, mood=MoodStats(10, 10, 10)))
+        text = _render(monday, wednesday, days=days)
+        assert '```\nMon 28 Sep  ▓▓▓░░░░░░░  3/10\nWed 30 Sep  ▓▓▓▓▓▓▓▓▓▓  10/10\n```' in text
+
+    def test_a_day_with_several_entries_shows_its_range_and_count(self):
+        entries = (_entry(mood=3), _entry(mood=8), _entry(mood=7))
+        text = _render(*entries, days=(_day(*entries, mood=MoodStats(average=6.0, lowest=3, highest=8)),))
+        assert 'Wed 30 Sep  ▓▓▓▓▓▓░░░░  3–8/10 · 3 entries' in text
+
+    def test_a_day_with_one_score_shows_no_range(self):
+        entries = (_entry(mood=6), _entry(mood=6))
+        text = _render(*entries, days=(_day(*entries, mood=MoodStats(average=6.0, lowest=6, highest=6)),))
+        assert 'Wed 30 Sep  ▓▓▓▓▓▓░░░░  6/10 · 2 entries' in text
+
+    def test_the_bar_rounds_half_up(self):
+        entries = (_entry(mood=4), _entry(mood=5))
+        text = _render(*entries, days=(_day(*entries, mood=MoodStats(average=4.5, lowest=4, highest=5)),))
+        assert '▓▓▓▓▓░░░░░' in _section(text, 'Mood by day')
 
     def test_bar_is_clamped_to_its_width(self):
-        rows = _section(_render(_entry(mood=-1), _entry(mood=11)), 'Mood by entry').splitlines()
-        assert 'Wed 30 Sep 09:05  ░░░░░░░░░░  -1/10' in rows
-        assert 'Wed 30 Sep 09:05  ▓▓▓▓▓▓▓▓▓▓  11/10' in rows
+        low, high = _entry(mood=-1), _entry(mood=11, moment=datetime(2026, 10, 1, 9, 5))
+        days = (_day(low, mood=MoodStats(-1, -1, -1)), _day(high, mood=MoodStats(11, 11, 11)))
+        rows = _section(_render(low, high, days=days), 'Mood by day').splitlines()
+        assert 'Wed 30 Sep  ░░░░░░░░░░  -1/10' in rows
+        assert 'Thu 01 Oct  ▓▓▓▓▓▓▓▓▓▓  11/10' in rows
 
 
 class TestEntriesSection:
-    def test_entries_keep_the_digest_order(self):
-        text = _render(_entry('first'), _entry('second'))
-        assert text.index('> first') < text.index('> second')
+    def test_entries_are_grouped_under_their_day(self):
+        tuesday = _entry('tuesday', moment=datetime(2026, 9, 29, 20, 0))
+        morning, evening = _entry('morning'), _entry('evening', moment=datetime(2026, 9, 30, 18, 30))
+        text = _render(tuesday, morning, evening, days=(_day(tuesday), _day(morning, evening)))
+        entries = _section(text, 'Entries')
+        assert entries.index('### Tue 29 Sep 2026') < entries.index('> tuesday')
+        assert entries.index('> tuesday') < entries.index('### Wed 30 Sep 2026')
+        assert entries.index('### Wed 30 Sep 2026') < entries.index('> morning') < entries.index('> evening')
+        assert entries.count('### ') == 2
 
-    def test_heading_shows_time_and_mood(self):
-        assert '### Wed 30 Sep 2026, 09:05 — mood 5/10' in _render()
+    def test_each_entry_shows_time_and_mood(self):
+        assert '### Wed 30 Sep 2026\n\n**09:05 — mood 5/10**\n' in _render()
 
     def test_flagged_entries_are_marked(self):
         entries = _section(_render(_entry('flag me', flagged=True)), 'Entries')
@@ -127,7 +182,7 @@ class TestEntriesSection:
         assert '> line one\n>\n> line two' in _render(_entry('line one\n\nline two'))
 
     def test_an_empty_entry_is_an_empty_quote(self):
-        assert '### Wed 30 Sep 2026, 09:05 — mood 5/10\n\n>\n' in _render(_entry(''))
+        assert '**09:05 — mood 5/10**\n\n>\n' in _render(_entry(''))
 
     def test_user_text_cannot_become_markdown_structure(self):
         text = _render(_entry('# not a heading\n- not a list\n  > not nested'))

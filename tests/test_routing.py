@@ -60,6 +60,7 @@ class TestTextReachesTheStepWaitingForIt:
         (journal.ONBOARDING_TIME, '09:00', 'handle_reminder_time'),
         (journal.ONBOARDING_THERAPY, 'Yes', 'handle_therapy'),
         (journal.MAIN_MENU, '📝 Check In', 'handle_main_menu'),
+        (journal.MAIN_MENU, '🗒 Add a note', 'handle_main_menu'),
         (journal.CHECK_IN_MOOD, '5', 'handle_mood'),
         (journal.CHECK_IN_TEXT, 'a long day at work', 'handle_entry_text'),
         (journal.CHECK_IN_GUIDANCE_OFFER, 'No thanks', 'handle_guidance_offer'),

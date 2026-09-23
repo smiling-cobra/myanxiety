@@ -13,7 +13,7 @@ from telegram.ext import ContextTypes
 from bot.handlers.journal import deps
 from bot.handlers.journal.errors import service_errors
 from bot.handlers.journal.states import MAIN_MENU
-from bot.keyboards import get_main_menu_keyboard
+from bot.handlers.journal.main_menu import main_menu_keyboard
 from messages.markdown import escape_md
 from messages.strings import (
     HISTORY_EMPTY,
@@ -66,7 +66,7 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     if not entries:
         await update.message.reply_text(
-            HISTORY_EMPTY, parse_mode='Markdown', reply_markup=get_main_menu_keyboard()
+            HISTORY_EMPTY, parse_mode='Markdown', reply_markup=await main_menu_keyboard(telegram_id)
         )
         return MAIN_MENU
 
@@ -75,7 +75,7 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         date_str = to_local(e['created_at'], tz).strftime('%d %b %Y')
         body += HISTORY_ENTRY.format(date=date_str, score=e['mood_score'], text=escape_md(e['text'][:200]))
 
-    await update.message.reply_text(body, parse_mode='Markdown', reply_markup=get_main_menu_keyboard())
+    await update.message.reply_text(body, parse_mode='Markdown', reply_markup=await main_menu_keyboard(telegram_id))
     return MAIN_MENU
 
 
@@ -94,7 +94,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
 
     if stats['total'] == 0:
-        await update.message.reply_text(STATS_EMPTY, reply_markup=get_main_menu_keyboard())
+        await update.message.reply_text(STATS_EMPTY, reply_markup=await main_menu_keyboard(telegram_id))
         return MAIN_MENU
 
     tags = _format_tags(top_tags(entries, 3))
@@ -107,7 +107,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             tags=tags,
         ),
         parse_mode='Markdown',
-        reply_markup=get_main_menu_keyboard(),
+        reply_markup=await main_menu_keyboard(telegram_id),
     )
     return MAIN_MENU
 
@@ -123,7 +123,7 @@ async def show_weekly_summary(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not entries:
         await update.message.reply_text(
-            WEEKLY_SUMMARY_EMPTY, parse_mode='Markdown', reply_markup=get_main_menu_keyboard()
+            WEEKLY_SUMMARY_EMPTY, parse_mode='Markdown', reply_markup=await main_menu_keyboard(telegram_id)
         )
         return MAIN_MENU
 
@@ -142,7 +142,7 @@ async def show_weekly_summary(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     body += await _pattern_paragraph(telegram_id, name, entries)
 
-    await update.message.reply_text(body, parse_mode='Markdown', reply_markup=get_main_menu_keyboard())
+    await update.message.reply_text(body, parse_mode='Markdown', reply_markup=await main_menu_keyboard(telegram_id))
     return MAIN_MENU
 
 
