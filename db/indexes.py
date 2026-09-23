@@ -37,8 +37,10 @@ INDEXES = (
     ('streaks', [('telegram_id', ASCENDING)], {'unique': True, 'name': 'telegram_id_unique'}),
     # Only /delete reads it, but a scan there grows with every user who ever had a row.
     ('notifications', [('telegram_id', ASCENDING)], {'name': 'telegram_id'}),
-    # MongoPersistence writes a row on every conversation state change, matched on both.
-    ('ptb_conversations', [('name', ASCENDING), ('key', ASCENDING)], {'name': 'name_key'}),
+    # MongoPersistence writes a row on every conversation state change, matched on
+    # both; /delete matches on `key` alone, so it leads. The name-only read runs
+    # once, at boot.
+    ('ptb_conversations', [('key', ASCENDING), ('name', ASCENDING)], {'name': 'key_name'}),
 )
 
 

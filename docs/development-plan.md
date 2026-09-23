@@ -74,7 +74,7 @@ Add boot-time index creation for the main query paths and explicit startup valid
 
 Recommended indexes include user lookup and onboarding scans, user-scoped entry queries by timestamp, and streak lookup by user.
 
-_Status: complete. `db/indexes.py` creates the per-user indexes at boot: `users.telegram_id` and `streaks.telegram_id` (both unique), `users.onboarded`, `entries.{telegram_id, created_at}`, `notifications.telegram_id` and `ptb_conversations.{name, key}`. An unreachable database fails the boot. An index that can't be built is logged and skipped, since the bot still works without it. `config.py` checks the required environment variables before anything else loads, and names every missing one. Before the first deploy, check production for duplicate `telegram_id` rows in `users` and `streaks`. The unique indexes won't build over them._
+_Status: complete. `db/indexes.py` creates the per-user indexes at boot: `users.telegram_id` and `streaks.telegram_id` (both unique), `users.onboarded`, `entries.{telegram_id, created_at}`, `notifications.telegram_id` and `ptb_conversations.{key, name}`. An unreachable database fails the boot. An index that can't be built is logged and skipped, since the bot still works without it. `config.py` checks the required environment variables before anything else loads, and names every missing one. Before the first deploy, check production for duplicate `telegram_id` rows in `users` and `streaks`. The unique indexes won't build over them._
 
 Primary anchors:
 
