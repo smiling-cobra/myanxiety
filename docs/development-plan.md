@@ -186,7 +186,7 @@ Explicitly out of scope for now:
 - Multi-user admin tooling
 - Data migration
 - Internationalization
-- Monetization work
+- Monetization work (the direction is recorded in Appendix B; nothing is built until Phase 7 data exists)
 
 ## Open recommendations
 
@@ -231,3 +231,33 @@ Verification:
 3. Resuming early brings back the next due reminder, and it respects today's watermark.
 4. A same-day time change follows the watermark rules above, in both directions.
 5. `tests/test_routing.py` covers `/settings` from every state, and `tests/test_states.py` pins the new state values.
+
+## Appendix B: Monetization direction
+
+This is not a phase. It records which models fit, so that choices made in the meantime don't close them off. [engineering-plan.md](engineering-plan.md) §9 holds the same decision. Four facts shape it:
+
+- Every active user costs LLM calls each day, but the export makes no LLM call.
+- People don't pay much directly for this kind of app. The money in this category comes from third parties such as clinicians, employers and insurers.
+- On Telegram, digital goods sold inside the bot are paid for in Stars.
+- Journal entries are GDPR Article 9 health data, so user trust is the main asset.
+
+Recommended models, in priority order:
+
+1. **Therapists pay; their clients use it free.** A therapist or practice pays per month, flat or per active client, and recommends the bot to clients. The product the therapist pays for is the export brief that already exists. Start with a per-therapist invite code carried in `acquisition_source`, and charge outside Telegram. Build no dashboard. Opt-in delivery of the export straight to the therapist would make us their data processor, so it needs a data processing agreement first.
+2. **A paid tier inside the bot, paid in Stars.** The paywall sits where the cost is: more LLM replies per day than the free limit, the weekly AI summary, a longer export window. Check-ins, reminders, settings, the crisis path, `/delete` and the basic 30-day export stay free for good.
+3. **Organisation licences, only after model 1 works.** Group practices, university counselling services and employee assistance programme (EAP) providers. Buyers will expect security reviews, a data processing agreement and admin tooling, and that tooling is out of scope today.
+
+Never:
+
+- Ads.
+- Selling or "anonymising" journal data.
+- Paywalling safety, deletion or a user's own export.
+- Copy that claims the product treats anxiety.
+
+Decide with data the Phase 4 instrumentation already collects:
+
+- **Model 1:** how many users have `in_therapy = yes`, and how often they export.
+- **Model 2:** how often users reach the daily LLM limit.
+- **The free core:** retention for users who pause reminders compared with users who don't.
+
+Add a willingness-to-pay question to the therapist interviews in engineering-plan §8.
