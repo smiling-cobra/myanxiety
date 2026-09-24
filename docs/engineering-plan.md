@@ -200,9 +200,24 @@ Sizing: **S** under a day · **M** two to four days · **L** one to two weeks.
 
 - Clinician-facing accounts, dashboards, and audit surfaces — deferred until client-side usage justifies them.
 - Data migration — test data only.
-- Monetisation mechanics.
+- Monetisation mechanics. The intended direction is in §9; nothing is built before Phase 7 data exists.
 - Internationalisation. All 35 constants in `messages/strings.py` are module-level English with no i18n mechanism. Worth knowing; not scheduled.
 
 ## 8. Before building the export
 
 One non-engineering prerequisite: talk to five therapists about what they would actually want to read in ninety seconds before a session. That conversation will shape the format more than any design decided here.
+
+## 9. Monetisation direction
+
+This is not scheduled. It is recorded so that choices made before it don't close it off.
+
+- **First choice: therapists pay, clients use it free.** The export brief is what a therapist pays for. Start with a per-therapist invite code in `acquisition_source`, and charge outside Telegram.
+- **Second choice: a paid tier inside the bot, paid in Telegram Stars.** Gate only the features that cost LLM calls. The crisis path, `/delete` and the basic export are never gated.
+- **Organisation licences come later.** They need admin tooling, which §7 defers.
+
+How to choose, from the Phase 4 events:
+
+- **Therapist model:** how often users with `in_therapy = yes` export.
+- **Paid tier:** how often users reach `DAILY_LLM_CALL_BUDGET`.
+
+Trap: if exports are sent straight to a therapist, we become the therapist's data processor under GDPR, and a data processing agreement has to be in place before that feature ships.
