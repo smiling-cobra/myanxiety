@@ -57,7 +57,8 @@ This keeps the loop responsive; it does not make updates concurrent. Updates are
   The user can change the reminder time, pause reminders for 3 days, 1 week or 2 weeks, or resume them early.
   There is deliberately no off switch. A pause is stored as `reminders_paused_until`, the local date reminders
   resume, so it ends with nothing to write. `reminder_time` is left alone, and weekly summaries keep going.
-  Mid-onboarding, `/settings` answers and returns None, which leaves the step in progress where it was
+  Before the reminder-time step, `/settings` answers and returns None, which leaves the step in progress where it was.
+  At the optional cohort question the account is already complete, so settings open like any other command there
 
 `/export` and `/flag` (`export.py`) are single-step commands that return to `MAIN_MENU`.
 

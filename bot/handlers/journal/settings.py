@@ -85,8 +85,11 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     telegram_id = update.effective_user.id
     user = await _get_user(telegram_id)
     if not user.get('onboarded'):
-        # Reachable mid-onboarding, where there is nothing to configure yet.
-        # Returning None leaves the conversation on the step it was at.
+        # Before the reminder-time step there is nothing to configure yet, and
+        # returning None leaves the conversation on the step it was at. From the
+        # optional cohort question on, the account is complete (`onboarded` is
+        # written with the reminder time), so settings open like any other
+        # command there, and the question is left unanswered as /history would.
         await update.message.reply_text(SETTINGS_NOT_READY)
         return None
 

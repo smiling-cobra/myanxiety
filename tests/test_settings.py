@@ -137,15 +137,24 @@ class TestShowSettings:
             await show_settings(_update('/settings'), _context())
         assert 'settings_viewed' in _tracked(analytics)
 
-    async def test_not_available_before_onboarding_is_done(self):
-        """Mid-onboarding there is nothing to configure, and the step in
-        progress must not be lost: None leaves the conversation where it was."""
+    async def test_not_available_before_the_account_exists(self):
+        """Before the reminder-time step there is nothing to configure, and the
+        step in progress must not be lost: None leaves the conversation where it was."""
         UserRepository().save({'telegram_id': USER_ID, 'acquisition_source': 'direct'})
         update = _update('/settings')
         with _at():
             state = await show_settings(update, _context())
         assert state is None
         assert update.message.reply_text.called
+
+    async def test_opens_at_the_optional_cohort_question(self):
+        """`onboarded` is written with the reminder time, before the cohort
+        question, so the account is complete there. Settings open as any other
+        command would, and the optional question is left unanswered."""
+        _save_user()  # onboarded, no `in_therapy` yet
+        with _at():
+            state = await show_settings(_update('/settings'), _context())
+        assert state == SETTINGS_MENU
 
     async def test_the_main_menu_button_opens_settings(self):
         _save_user()
