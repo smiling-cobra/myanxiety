@@ -141,7 +141,9 @@ window bounds those retries. Unlike `time_utils.resolve_timezone`, an unusable t
 suppresses the send rather than falling back to UTC. A user who has already checked in today gets no
 reminder: the job writes the watermark and records `reminder_skipped` instead. A user whose local date is
 before `reminders_paused_until` is not due for the reminder at all, and gets no event. The weekly summary
-ignores the pause.
+ignores the pause. The tick's user snapshot goes stale while a job waits, so the reminder job re-reads the
+user and asks the tick's question again (`_reminder_still_due`): a pause, a moved time or a `/delete` made in
+between wins.
 
 **Safety** (`services/safety.py`, `checkin.py`): crisis resources are triggered by two independent
 signals — a mood score at or below `CRISIS_MOOD_THRESHOLD`, and `detect_crisis` matching the entry

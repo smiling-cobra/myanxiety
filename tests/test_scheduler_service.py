@@ -60,6 +60,12 @@ def _svc() -> SchedulerService:
     # ceiling should behave as if one does not exist.
     svc._usage_svc = MagicMock()
     svc._usage_svc.consume_llm.return_value = True
+    # The reminder job re-reads its user before sending; answer from the same
+    # list the tick scanned, as a real store would.
+    svc._user_svc.get.side_effect = lambda telegram_id: next(
+        (dict(u) for u in svc._user_svc.get_all_onboarded.return_value if u['telegram_id'] == telegram_id),
+        None,
+    )
     svc._inflight = set()
     return svc
 
@@ -76,6 +82,10 @@ class _FakeUserService:
 
     def get_all_onboarded(self) -> list:
         return [dict(u) for u in self._users.values()]
+
+    def get(self, telegram_id: int) -> dict | None:
+        user = self._users.get(telegram_id)
+        return dict(user) if user else None
 
     def update(self, telegram_id: int, **kwargs) -> None:
         # Mirrors UserService.update: a missing user is not created.
@@ -565,6 +575,46 @@ class TestPausedReminders:
         with _at(8, 0, '2026-03-29', timezone='Asia/Tokyo'):
             await _tick_and_deliver(svc, ctx)
         assert _reminders(ctx) == 1
+
+
+class TestSettingsChangedBeforeDelivery:
+    """The reminder job re-reads the user, so a change made between the tick
+    and delivery wins over the tick's snapshot."""
+
+    async def _tick_change_deliver(self, change, **fields) -> tuple:
+        svc = _svc()
+        svc._user_svc = _FakeUserService(_user(last_weekly_summary_check='2026-03-28', **fields))
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await svc._tick(ctx)
+            change(svc._user_svc)
+            await _drain(ctx)
+        return svc, ctx
+
+    async def test_a_pause_set_after_the_tick_stops_the_reminder(self):
+        svc, ctx = await self._tick_change_deliver(
+            lambda users: users.update(1, reminders_paused_until='2026-03-31')
+        )
+        ctx.bot.send_message.assert_not_called()
+        assert 'last_reminder_sent' not in svc._user_svc.get(1)
+        assert svc._inflight == set()
+
+    async def test_a_time_moved_after_the_tick_stops_the_reminder(self):
+        _, ctx = await self._tick_change_deliver(lambda users: users.update(1, reminder_time='21:00'))
+        ctx.bot.send_message.assert_not_called()
+
+    async def test_an_account_deleted_after_the_tick_gets_nothing(self):
+        svc, ctx = await self._tick_change_deliver(lambda users: users._users.pop(1))
+        ctx.bot.send_message.assert_not_called()
+        assert svc._inflight == set()
+
+    async def test_an_unchanged_user_is_still_reminded(self):
+        _, ctx = await self._tick_change_deliver(lambda users: None)
+        assert _reminders(ctx) == 1
+
+    async def test_the_reminder_is_sent_with_the_fresh_record(self):
+        _, ctx = await self._tick_change_deliver(lambda users: users.update(1, name='Alicia'))
+        assert 'Alicia' in ctx.bot.send_message.call_args.kwargs['text']
 
 
 class TestReminderTimeChangedSameDay:
