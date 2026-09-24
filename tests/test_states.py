@@ -35,6 +35,12 @@ class TestPersistedStateValues:
         """Added in Phase 5."""
         assert states.DELETE_CONFIRM == 8
 
+    def test_the_settings_states_were_appended(self):
+        """Added in Phase 8."""
+        assert states.SETTINGS_MENU == 9
+        assert states.SETTINGS_TIME == 10
+        assert states.SETTINGS_PAUSE_LENGTH == 11
+
     def test_every_state_is_distinct(self):
         values = [
             states.ONBOARDING_NAME,
@@ -46,6 +52,9 @@ class TestPersistedStateValues:
             states.CHECK_IN_GUIDANCE_OFFER,
             states.ONBOARDING_THERAPY,
             states.DELETE_CONFIRM,
+            states.SETTINGS_MENU,
+            states.SETTINGS_TIME,
+            states.SETTINGS_PAUSE_LENGTH,
         ]
         assert len(set(values)) == len(values)
 

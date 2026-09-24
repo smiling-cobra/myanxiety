@@ -19,6 +19,7 @@ from telegram.ext import ContextTypes
 
 from bot.handlers.journal import deps
 from services import analytics_service as analytics
+from services.time_utils import parse_reminder_time
 from bot.handlers.journal.states import (
     MAIN_MENU,
     ONBOARDING_NAME,
@@ -155,12 +156,8 @@ async def handle_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def handle_reminder_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    time_str = update.message.text.strip()
-    if not re.match(r'^\d{2}:\d{2}$', time_str):
-        await update.message.reply_text(WRONG_TIME)
-        return ONBOARDING_TIME
-    h, m = int(time_str[:2]), int(time_str[3:])
-    if not (0 <= h <= 23 and 0 <= m <= 59):
+    time_str = parse_reminder_time(update.message.text)
+    if time_str is None:
         await update.message.reply_text(WRONG_TIME)
         return ONBOARDING_TIME
 

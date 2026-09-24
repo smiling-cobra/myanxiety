@@ -119,15 +119,23 @@ class SchedulerService:
     async def _run_job(self, context) -> None:
         job = context.job.data
         kind, user, today = job['kind'], job['user'], job['today']
+        telegram_id = user['telegram_id']
         try:
             if kind == _REMINDER:
-                await self._send_reminder(context, user, today)
+                # The tick's snapshot may be stale by now: between the tick and
+                # this job the user can pause reminders, move their reminder time
+                # or delete their account from /settings or /delete. Ask the
+                # tick's question again of a fresh read, so a reminder never
+                # follows a "paused" confirmation.
+                user = await asyncio.to_thread(self._user_svc.get, telegram_id)
+                if self._reminder_still_due(user, today):
+                    await self._send_reminder(context, user, today)
             else:
                 await self._send_weekly_summary(context, user, today)
         except Exception:
-            logger.exception('Failed to deliver %s to user %s.', kind, user['telegram_id'])
+            logger.exception('Failed to deliver %s to user %s.', kind, telegram_id)
         finally:
-            self._inflight.discard((kind, user['telegram_id']))
+            self._inflight.discard((kind, telegram_id))
 
     # ------------------------------------------------------------------
     # Delivery
@@ -278,7 +286,40 @@ class SchedulerService:
         return (now_local.hour * 60 + now_local.minute) - (hour * 60 + minute)
 
     def _reminder_due(self, user: dict, today: str) -> bool:
-        return user.get('last_reminder_sent') != today
+        return user.get('last_reminder_sent') != today and not self._reminders_paused(user, today)
+
+    def _reminder_still_due(self, user: dict | None, today: str) -> bool:
+        """The tick's test for a reminder, repeated on a fresh read of the user."""
+        if not (user and user.get('onboarded')):
+            return False
+        now_local = self._local_now(user)
+        return (
+            now_local is not None
+            and now_local.date().isoformat() == today
+            and self._in_due_window(now_local, user)
+            and self._reminder_due(user, today)
+        )
+
+    def _reminders_paused(self, user: dict, today: str) -> bool:
+        """Whether `today` falls inside a pause set from /settings.
+
+        `reminders_paused_until` is the local date reminders resume, so the pause
+        ends by itself with nothing to write. Only the daily reminder pauses; the
+        weekly summary keeps its own cadence. A value that isn't a date is
+        ignored rather than obeyed: a corrupt field must not silence someone's
+        reminders for good.
+        """
+        until = user.get('reminders_paused_until')
+        if not until:
+            return False
+        try:
+            return date.fromisoformat(today) < date.fromisoformat(until)
+        except (TypeError, ValueError):
+            logger.warning(
+                'Invalid reminders_paused_until value %r for user %s — ignoring the pause.',
+                until, user.get('telegram_id'),
+            )
+            return False
 
     def _weekly_summary_due(self, user: dict, today: str) -> bool:
         if user.get('last_weekly_summary_check') == today:

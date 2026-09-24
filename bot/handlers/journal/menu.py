@@ -8,9 +8,10 @@ from bot.handlers.journal.main_menu import checked_in_today, main_menu_keyboard
 from bot.handlers.journal.onboarding import start
 from bot.handlers.journal.states import CHECK_IN_MOOD, MAIN_MENU
 from bot.handlers.journal.export import send_export
+from bot.handlers.journal.settings import show_settings
 from bot.handlers.journal.views import show_history, show_stats, show_weekly_summary
 from bot.keyboards import (
-    ENTRY_CHOICES, EXPORT, HELP, HISTORY, MAIN_MENU_CHOICES, STATS, WEEKLY_SUMMARY, get_mood_keyboard,
+    ENTRY_CHOICES, EXPORT, HELP, HISTORY, MAIN_MENU_CHOICES, SETTINGS, STATS, WEEKLY_SUMMARY, get_mood_keyboard,
 )
 from messages.strings import (
     CANCEL_MESSAGE, CHECK_IN_MOOD_PROMPT, HELP_MESSAGE, MAIN_MENU_MESSAGE, NOTE_MOOD_PROMPT,
@@ -46,6 +47,9 @@ async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if choice == EXPORT:
         return await send_export(update, context)
+
+    if choice == SETTINGS:
+        return await show_settings(update, context)
 
     if choice == HELP:
         await update.message.reply_text(HELP_MESSAGE, parse_mode='Markdown')

@@ -178,6 +178,7 @@ Included in this plan:
 - Tag cleanup
 - Export and delete surfaces
 - Onboarding and copy improvements
+- Reminder settings: change the time, pause for a set period, resume early (Appendix A)
 
 Explicitly out of scope for now:
 
@@ -193,3 +194,40 @@ Two decisions are still worth making explicit:
 
 1. Crisis resources are not jurisdiction-aware yet. Recommendation: defer localization until deterministic content-triggered safety is in place.
 2. For the PTB migration, prefer `asyncio.to_thread` as the first protection step for Anthropic calls. Moving fully to an async LLM client is cleaner long term, but it broadens the migration surface.
+
+## Appendix A: Phase 8 — Reminder settings
+
+Users have reported this gap: once onboarding is done, the daily reminder is fixed. The only way to stop it is to `/delete` or block the bot, and both lose the user. This phase adds a settings surface, a `/settings` command and a main-menu button, where the user can change their reminder time, pause reminders for a set period, and resume them early. It does not depend on Phase 7 data, so it can ship first. [engineering-plan.md](engineering-plan.md) does not cover it.
+
+Reminders can be paused but never switched off. A hard week or a holiday calls for a break, not a permanent off switch, and a pause that ends by itself doesn't depend on the user remembering to turn reminders back on. The user picks from a fixed set of durations (for example 3 days, 1 week, 2 weeks). This is stored as `reminders_paused_until`, the local date reminders resume. `reminder_time` stays as it is, so reminders come back at the same time. Resuming early clears the field. Weekly summaries are not affected by a pause.
+
+The copy should frame this as a break, not as leaving. Pausing confirms the date reminders come back and that the user can still write any time. It never mentions the streak. For example: "Reminders paused until Monday. You can still write here whenever you like." When the user changes the reminder time, validate it the same way the onboarding step does, so both paths share a single parser.
+
+Traps:
+
+- `SchedulerService` has to treat a user as not due while their local date is before `reminders_paused_until`. It should compare in the user's timezone, not in UTC, the same way it already works out due-ness. A paused user records no per-tick event: they just aren't due, the same as a user whose reminder time hasn't come yet.
+- Changing the time on the same local day has to respect the `last_reminder_sent` watermark and the `_inflight` guard. A user who already got today's reminder and moves the time later should not get a second one. A user who hasn't been reminded yet should get one at the new time.
+- New conversation states may only be appended to `states.py`, and `tests/test_states.py` must be updated. `/settings` goes in as both an entry point and a fallback, and `allow_reentry` stays off.
+- Record new events (`settings_viewed`, `reminder_time_changed` with the hour only, `reminders_paused` with the chosen length in days, `reminders_resumed` for an early resume) with closed-vocabulary props only. A pause ends by itself, so the automatic resume is worked out from the `reminders_paused` row rather than recorded.
+- A pause changes the retention baseline, so Phase 7 analysis should look separately at the days a user had reminders paused.
+
+_Status: complete. `/settings` and a Settings menu button open `settings.py`, which offers Change reminder time, Pause (3 days, 1 week, 2 weeks) or Resume, and Back. Onboarding and settings share `time_utils.parse_reminder_time`. The scheduler's `_reminders_paused` compares the user's local date with `reminders_paused_until`, and ignores a malformed value rather than obeying it. Three states were appended: `SETTINGS_MENU`, `SETTINGS_TIME` and `SETTINGS_PAUSE_LENGTH`._
+
+Primary anchors:
+
+- [bot/handlers/journal/__init__.py](../bot/handlers/journal/__init__.py)
+- [bot/handlers/journal/settings.py](../bot/handlers/journal/settings.py)
+- [bot/handlers/journal/onboarding.py](../bot/handlers/journal/onboarding.py)
+- [bot/handlers/journal/states.py](../bot/handlers/journal/states.py)
+- [bot/keyboards.py](../bot/keyboards.py)
+- [services/scheduler_service.py](../services/scheduler_service.py)
+- [services/user_service.py](../services/user_service.py)
+- [messages/strings.py](../messages/strings.py)
+
+Verification:
+
+1. While reminders are paused, a scheduler tick sends no reminder and doesn't raise. The weekly summary is still sent.
+2. Reminders come back on the resume date, at the stored `reminder_time`, judged by the user's local date. A user in a timezone far from UTC resumes on the right day.
+3. Resuming early brings back the next due reminder, and it respects today's watermark.
+4. A same-day time change follows the watermark rules above, in both directions.
+5. `tests/test_routing.py` covers `/settings` from every state, and `tests/test_states.py` pins the new state values.

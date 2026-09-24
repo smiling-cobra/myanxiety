@@ -69,6 +69,12 @@ WEEKLY_SUMMARY_VIEWED = 'weekly_summary_viewed'
 EXPORT_REQUESTED = 'export_requested'
 SESSION_FLAG_TOGGLED = 'session_flag_toggled'
 DELETE_CANCELLED = 'delete_cancelled'
+SETTINGS_VIEWED = 'settings_viewed'
+REMINDER_TIME_CHANGED = 'reminder_time_changed'
+# `days` is the chosen length. A pause ends by itself, so the automatic resume
+# is derivable from this row; only an early resume is recorded separately.
+REMINDERS_PAUSED = 'reminders_paused'
+REMINDERS_RESUMED = 'reminders_resumed'
 # Recorded *after* the fan-out, with no telegram_id: every event the user ever
 # generated has just been deleted, and this one must not be the row that
 # re-links them. Its props are counts, which join to nothing.

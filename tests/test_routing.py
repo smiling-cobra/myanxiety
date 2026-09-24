@@ -65,6 +65,10 @@ class TestTextReachesTheStepWaitingForIt:
         (journal.CHECK_IN_TEXT, 'a long day at work', 'handle_entry_text'),
         (journal.CHECK_IN_GUIDANCE_OFFER, 'No thanks', 'handle_guidance_offer'),
         (journal.DELETE_CONFIRM, '🗑 Yes, delete everything', 'handle_delete_confirmation'),
+        (journal.MAIN_MENU, '⚙️ Settings', 'handle_main_menu'),
+        (journal.SETTINGS_MENU, '⏸ Pause reminders', 'handle_settings_choice'),
+        (journal.SETTINGS_TIME, '21:30', 'handle_settings_time'),
+        (journal.SETTINGS_PAUSE_LENGTH, '1 week', 'handle_pause_length'),
     ])
     def test_state_handler_wins_over_lost_state_recovery(self, conversation, state, text, expected):
         assert _route(conversation, state, text) == expected
@@ -82,6 +86,7 @@ class TestCommandsWorkFromAnywhere:
         ('/export', 'send_export'),
         ('/delete', 'request_delete'),
         ('/flag', 'toggle_flag'),
+        ('/settings', 'show_settings'),
     ])
     def test_before_any_conversation(self, conversation, command, expected):
         assert _route(conversation, None, command) == expected
@@ -92,9 +97,17 @@ class TestCommandsWorkFromAnywhere:
         ('/export', 'send_export'),
         ('/delete', 'request_delete'),
         ('/flag', 'toggle_flag'),
+        ('/settings', 'show_settings'),
         ('/cancel', 'cancel'),
     ])
-    @pytest.mark.parametrize('state', [journal.CHECK_IN_MOOD, journal.CHECK_IN_TEXT, journal.ONBOARDING_NAME])
+    @pytest.mark.parametrize('state', [
+        journal.CHECK_IN_MOOD,
+        journal.CHECK_IN_TEXT,
+        journal.ONBOARDING_NAME,
+        journal.SETTINGS_MENU,
+        journal.SETTINGS_TIME,
+        journal.SETTINGS_PAUSE_LENGTH,
+    ])
     def test_mid_conversation(self, conversation, state, command, expected):
         assert _route(conversation, state, command) == expected
 

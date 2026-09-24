@@ -66,7 +66,8 @@ ONBOARDING_DONE = (
     "a mood rating, a few lines about your day, and a reply from me.\n\n"
     "Once you've checked in, the button becomes *Add a note*: a *note* for anything that comes up later that day.\n\n"
     "• */flag* marks your latest entry as something to raise in your next session\n"
-    "• */export* sends you a summary of your last 30 days\n\n"
+    "• */export* sends you a summary of your last 30 days\n"
+    "• */settings* changes your reminder time, or pauses reminders for a while\n\n"
     "{therapy_tip}"
     "Whenever you're ready, tap *Check In* to start your first entry."
 )
@@ -146,13 +147,15 @@ HELP_MESSAGE = (
     "*History* — See your last 7 entries\n"
     "*Stats* — View your streak and mood trends\n"
     "*Export* — A summary of the last 30 days to bring to a therapy session, "
-    "followed by your entries in full\n\n"
+    "followed by your entries in full\n"
+    "*Settings* — Change your reminder time, or pause reminders for a while\n\n"
     "You can also use these commands any time:\n"
     "*/history* — Show your recent entries\n"
     "*/stats* — Show your stats\n"
     "*/summary* — Show your weekly mood summary\n"
     "*/export* — Get a file of your recent entries\n"
     "*/flag* — Mark your latest entry to raise in your next session\n"
+    "*/settings* — Change your reminder time, or pause reminders\n"
     "*/delete* — Permanently delete everything I store about you\n"
     "*/privacy* — What happens to what you write\n"
     "*/cancel* — End the current session\n\n"
@@ -297,6 +300,44 @@ WRONG_TIMEZONE = (
 )
 
 WRONG_TIME = "Please enter time in HH:MM format, e.g. 09:00"
+
+SETTINGS_OVERVIEW = (
+    "⚙️ *Settings*\n\n"
+    "Daily reminder: *{reminder_time}* ({timezone})\n"
+    "{status}"
+)
+
+SETTINGS_STATUS_ACTIVE = "Reminders are on."
+
+SETTINGS_STATUS_PAUSED = "Reminders are paused until *{date}*."
+
+SETTINGS_NOT_READY = "Settings will be here as soon as we've finished getting you set up."
+
+SETTINGS_TIME_PROMPT = (
+    "What time would you like your daily reminder? It's currently {reminder_time}.\n"
+    "Please use 24h format, e.g. 09:00 or 21:30."
+)
+
+REMINDER_TIME_CHANGED = "Done — your daily reminder is now at *{reminder_time}*."
+
+# Appended to REMINDER_TIME_CHANGED while a pause is running, so nobody reads
+# "your reminder is now at 08:00" and expects one tomorrow morning.
+REMINDER_TIME_CHANGED_WHILE_PAUSED = "\n\nReminders are still paused, and pick up at the new time on *{date}*."
+
+# A pause is a break, not a goodbye. The copy says when reminders come back and
+# that writing is still open, and says nothing about the streak.
+PAUSE_PROMPT = (
+    "How long a break would you like from reminders?\n\n"
+    "They'll start again by themselves afterwards, and you can bring them back sooner "
+    "from Settings."
+)
+
+REMINDERS_PAUSED = (
+    "Reminders paused until *{date}*. ⏸\n\n"
+    "Take the time you need. You can still write here whenever you like."
+)
+
+REMINDERS_RESUMED = "Reminders are back on. The next one comes at *{reminder_time}*. 🌿"
 
 REMINDER_MESSAGE = (
     "Hey {name}, time for your daily check-in! 🌿\n\n"

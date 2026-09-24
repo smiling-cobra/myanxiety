@@ -7,11 +7,12 @@ STATS = '📊 Stats'
 WEEKLY_SUMMARY = '📈 Weekly Summary'
 EXPORT = '📤 Export'
 HELP = '❓ Help'
+SETTINGS = '⚙️ Settings'
 BACK = '🔙 Back'
 
 # The buttons a main-menu keyboard can produce. A keyboard outlives the
 # conversation that sent it, so a recovered session needs to recognise them.
-MAIN_MENU_CHOICES = (CHECK_IN, ADD_NOTE, HISTORY, STATS, WEEKLY_SUMMARY, EXPORT, HELP)
+MAIN_MENU_CHOICES = (CHECK_IN, ADD_NOTE, HISTORY, STATS, WEEKLY_SUMMARY, EXPORT, SETTINGS, HELP)
 
 # Both labels start an entry. The label is a hint about which kind it will be,
 # not the decision: a keyboard does not change at local midnight, so the one
@@ -22,7 +23,7 @@ ENTRY_CHOICES = (CHECK_IN, ADD_NOTE)
 
 def get_main_menu_keyboard(checked_in: bool = False):
     return ReplyKeyboardMarkup(
-        [[ADD_NOTE if checked_in else CHECK_IN], [HISTORY, STATS], [WEEKLY_SUMMARY, EXPORT], [HELP]],
+        [[ADD_NOTE if checked_in else CHECK_IN], [HISTORY, STATS], [WEEKLY_SUMMARY, EXPORT], [SETTINGS, HELP]],
         resize_keyboard=True
     )
 
@@ -82,6 +83,30 @@ def get_delete_keyboard():
         resize_keyboard=True,
         one_time_keyboard=True,
     )
+
+
+CHANGE_REMINDER_TIME = '🕘 Change reminder time'
+PAUSE_REMINDERS = '⏸ Pause reminders'
+RESUME_REMINDERS = '▶️ Resume reminders'
+
+# A pause always has an end. There is deliberately no "off": a break that ends
+# by itself doesn't rely on anyone remembering to come back and switch it on.
+PAUSE_LENGTHS = {
+    '3 days': 3,
+    '1 week': 7,
+    '2 weeks': 14,
+}
+
+
+def get_settings_keyboard(paused: bool):
+    return ReplyKeyboardMarkup(
+        [[CHANGE_REMINDER_TIME], [RESUME_REMINDERS if paused else PAUSE_REMINDERS], [BACK]],
+        resize_keyboard=True,
+    )
+
+
+def get_pause_keyboard():
+    return ReplyKeyboardMarkup([list(PAUSE_LENGTHS), [BACK]], resize_keyboard=True, one_time_keyboard=True)
 
 
 def get_timezone_keyboard():

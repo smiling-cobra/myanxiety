@@ -53,6 +53,12 @@ This keeps the loop responsive; it does not make updates concurrent. Updates are
   midnight. Both labels start an entry, and the daily reminder carries a fresh "Check In" keyboard
 - `CHECK_IN_GUIDANCE_OFFER`: on a low mood score, an opt-in offer of coping guidance — `checkin.py`
 - `DELETE_CONFIRM`: `/delete` waits here for the exact confirmation button — `account.py`
+- `SETTINGS_MENU` → `SETTINGS_TIME` / `SETTINGS_PAUSE_LENGTH`: `/settings` or the Settings button — `settings.py`.
+  The user can change the reminder time, pause reminders for 3 days, 1 week or 2 weeks, or resume them early.
+  There is deliberately no off switch. A pause is stored as `reminders_paused_until`, the local date reminders
+  resume, so it ends with nothing to write. `reminder_time` is left alone, and weekly summaries keep going.
+  Before the reminder-time step, `/settings` answers and returns None, which leaves the step in progress where it was.
+  At the optional cohort question the account is already complete, so settings open like any other command there
 
 `/export` and `/flag` (`export.py`) are single-step commands that return to `MAIN_MENU`.
 
@@ -66,8 +72,8 @@ journal entry, and onboarding answer went to recovery. `tests/test_routing.py` d
 `register()`. Each responsibility lives in its own module — `states.py` (state ints and mood
 thresholds), `deps.py` (service singletons, reached as `deps.llm_svc` etc.), `errors.py`
 (`@service_errors`, the shared "fall back to main menu" decorator), `timezones.py` (IANA lookup),
-`main_menu.py` (the per-user menu keyboard), the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export`, `/flag`) and
-`account.py` (`/delete`).
+`main_menu.py` (the per-user menu keyboard), the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export`, `/flag`),
+`account.py` (`/delete`) and `settings.py` (`/settings`).
 
 **Layers**:
 | Directory | Role |
@@ -134,7 +140,11 @@ because the "too few entries this week" outcome writes no `_sent` watermark and 
 re-scan on every tick. A job that raises writes no watermark, so the next tick retries it; the
 window bounds those retries. Unlike `time_utils.resolve_timezone`, an unusable timezone here
 suppresses the send rather than falling back to UTC. A user who has already checked in today gets no
-reminder: the job writes the watermark and records `reminder_skipped` instead.
+reminder: the job writes the watermark and records `reminder_skipped` instead. A user whose local date is
+before `reminders_paused_until` is not due for the reminder at all, and gets no event. The weekly summary
+ignores the pause. The tick's user snapshot goes stale while a job waits, so the reminder job re-reads the
+user and asks the tick's question again (`_reminder_still_due`): a pause, a moved time or a `/delete` made in
+between wins.
 
 **Safety** (`services/safety.py`, `checkin.py`): crisis resources are triggered by two independent
 signals — a mood score at or below `CRISIS_MOOD_THRESHOLD`, and `detect_crisis` matching the entry
@@ -206,3 +216,4 @@ engineering plan wins.
 - **Phase 5 — Data quality and user control**: complete (tag normalisation, fallback-prose tag leak, `/export` v0, `/delete` fan-out, `/flag`), plus a routing fix for in-conversation text
 - **Phase 6 — Productize the therapist artifact**: complete (export brief, onboarding and copy, daily check-in vs. notes, reminder skip)
 - **Phase 7 — Retention experiments**: blocked on 4–6 weeks of Phase 4 data
+- **Phase 8 — Reminder settings**: complete (development-plan Appendix A): `/settings` changes the reminder time, pauses reminders for a set period and resumes them early
