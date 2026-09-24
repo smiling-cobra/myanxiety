@@ -8,7 +8,8 @@ actually lived through rather than the day UTC happened to be on.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, tzinfo
+import re
+from datetime import date, datetime, timezone, tzinfo
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -57,3 +58,26 @@ def resolve_timezone(name: str = None, telegram_id: int = None) -> tzinfo:
 def to_local(value: datetime, tz: tzinfo) -> datetime:
     """Render a stored timestamp in the user's timezone."""
     return as_utc(value).astimezone(tz)
+
+
+def local_today(name: str = None, telegram_id: int = None) -> date:
+    """The user's current local date, with `resolve_timezone`'s UTC fallback."""
+    return now().astimezone(resolve_timezone(name, telegram_id)).date()
+
+
+_REMINDER_TIME = re.compile(r'^\d{2}:\d{2}$')
+
+
+def parse_reminder_time(text: str) -> str | None:
+    """A typed reminder time as stored `HH:MM`, or None if it isn't one.
+
+    Onboarding and /settings both take a reminder time from free text, so they
+    share this rather than each keeping a copy of the rule.
+    """
+    text = (text or '').strip()
+    if not _REMINDER_TIME.match(text):
+        return None
+    hour, minute = int(text[:2]), int(text[3:])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return text

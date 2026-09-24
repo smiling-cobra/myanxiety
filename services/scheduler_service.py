@@ -278,7 +278,28 @@ class SchedulerService:
         return (now_local.hour * 60 + now_local.minute) - (hour * 60 + minute)
 
     def _reminder_due(self, user: dict, today: str) -> bool:
-        return user.get('last_reminder_sent') != today
+        return user.get('last_reminder_sent') != today and not self._reminders_paused(user, today)
+
+    def _reminders_paused(self, user: dict, today: str) -> bool:
+        """Whether `today` falls inside a pause set from /settings.
+
+        `reminders_paused_until` is the local date reminders resume, so the pause
+        ends by itself with nothing to write. Only the daily reminder pauses; the
+        weekly summary keeps its own cadence. A value that isn't a date is
+        ignored rather than obeyed: a corrupt field must not silence someone's
+        reminders for good.
+        """
+        until = user.get('reminders_paused_until')
+        if not until:
+            return False
+        try:
+            return date.fromisoformat(today) < date.fromisoformat(until)
+        except (TypeError, ValueError):
+            logger.warning(
+                'Invalid reminders_paused_until value %r for user %s — ignoring the pause.',
+                until, user.get('telegram_id'),
+            )
+            return False
 
     def _weekly_summary_due(self, user: dict, today: str) -> bool:
         if user.get('last_weekly_summary_check') == today:

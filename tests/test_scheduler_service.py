@@ -503,6 +503,105 @@ class TestReminderAfterCheckIn:
         assert 'reminder_sent' not in tracked
 
 
+def _reminders(ctx) -> int:
+    return sum(
+        'time for your daily check-in' in call.kwargs['text']
+        for call in ctx.bot.send_message.call_args_list
+    )
+
+
+class TestPausedReminders:
+    """/settings pauses the daily reminder until a local date, and only that."""
+
+    def _paused(self, until: str, **fields) -> dict:
+        user = _user(**fields)
+        user['reminders_paused_until'] = until
+        return user
+
+    def test_paused_before_the_resume_date(self):
+        assert _svc()._reminder_due(self._paused('2026-03-30'), '2026-03-28') is False
+
+    def test_due_again_on_the_resume_date(self):
+        assert _svc()._reminder_due(self._paused('2026-03-28'), '2026-03-28') is True
+
+    def test_a_pause_does_not_override_the_watermark(self):
+        user = self._paused('2026-03-20', last_reminder_sent='2026-03-28')
+        assert _svc()._reminder_due(user, '2026-03-28') is False
+
+    def test_a_cleared_pause_is_no_pause(self):
+        assert _svc()._reminder_due(self._paused(None), '2026-03-28') is True
+
+    def test_a_malformed_pause_is_ignored_rather_than_obeyed(self):
+        assert _svc()._reminder_due(self._paused('someday'), '2026-03-28') is True
+
+    async def test_no_reminder_is_sent_while_paused(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(self._paused('2026-03-30', last_weekly_summary_check='2026-03-28'))
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        ctx.bot.send_message.assert_not_called()
+        assert 'reminder_skipped' not in _tracked(svc)
+
+    async def test_the_weekly_summary_still_goes_out(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(self._paused('2026-04-05'))
+        svc._journal_svc.get_weekly_entries.return_value = [{'mood_score': 5, 'text': 'x'}] * 4
+        svc._llm_svc.get_weekly_summary.return_value = 'A steady week.'
+        ctx = _context()
+        with _at(9, 0, '2026-03-29'):
+            await _tick_and_deliver(svc, ctx)
+        ctx.bot.send_message.assert_called_once()
+        assert 'weekly insight' in ctx.bot.send_message.call_args.kwargs['text']
+        assert _reminders(ctx) == 0
+
+    async def test_reminders_resume_on_the_users_local_date(self):
+        # 08:00 in Tokyo on the 29th is still the 28th in UTC.
+        svc = _svc()
+        svc._user_svc = _FakeUserService(self._paused(
+            '2026-03-29', timezone='Asia/Tokyo', reminder_time='08:00', last_weekly_summary_check='2026-03-29',
+        ))
+        ctx = _context()
+        with _at(8, 0, '2026-03-29', timezone='Asia/Tokyo'):
+            await _tick_and_deliver(svc, ctx)
+        assert _reminders(ctx) == 1
+
+
+class TestReminderTimeChangedSameDay:
+    """A changed reminder time is judged against today's watermark, not re-sent."""
+
+    async def test_moving_later_after_todays_reminder_sends_no_second(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(_user(last_weekly_summary_check='2026-03-28'))
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        svc._user_svc.update(1, reminder_time='21:00')
+        with _at(21, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        assert _reminders(ctx) == 1
+
+    async def test_moving_earlier_into_the_window_sends_no_second(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(_user(reminder_time='21:00', last_weekly_summary_check='2026-03-28'))
+        ctx = _context()
+        with _at(21, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        svc._user_svc.update(1, reminder_time='20:50')
+        with _at(21, 5, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        assert _reminders(ctx) == 1
+
+    async def test_moving_earlier_before_todays_reminder_sends_at_the_new_time(self):
+        svc = _svc()
+        svc._user_svc = _FakeUserService(_user(reminder_time='21:00', last_weekly_summary_check='2026-03-28'))
+        svc._user_svc.update(1, reminder_time='09:00')
+        ctx = _context()
+        with _at(9, 0, '2026-03-28'):
+            await _tick_and_deliver(svc, ctx)
+        assert _reminders(ctx) == 1
+
+
 class TestSendWeeklySummary:
     async def test_sends_when_enough_entries(self):
         svc = _svc()

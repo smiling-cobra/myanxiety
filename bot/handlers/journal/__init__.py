@@ -20,6 +20,7 @@ machine and `register()`. Each responsibility lives in its own submodule:
     views.py        history, stats, weekly summary
     export.py       /export — the therapist-shareable file, and /flag for it
     account.py      /delete — confirmation and the full fan-out
+    settings.py     /settings — reminder time, pause, early resume
 """
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 
@@ -27,6 +28,12 @@ from bot.handlers.journal.account import handle_delete_confirmation, request_del
 from bot.handlers.journal.checkin import handle_entry_text, handle_guidance_offer, handle_mood
 from bot.handlers.journal.export import send_export, toggle_flag
 from bot.handlers.journal.menu import cancel, handle_main_menu, recover_state
+from bot.handlers.journal.settings import (
+    handle_pause_length,
+    handle_settings_choice,
+    handle_settings_time,
+    show_settings,
+)
 from bot.handlers.journal.onboarding import (
     handle_name,
     handle_reminder_time,
@@ -45,6 +52,9 @@ from bot.handlers.journal.states import (
     ONBOARDING_THERAPY,
     ONBOARDING_TIME,
     ONBOARDING_TIMEZONE,
+    SETTINGS_MENU,
+    SETTINGS_PAUSE_LENGTH,
+    SETTINGS_TIME,
 )
 from bot.handlers.journal.views import show_history, show_stats, show_weekly_summary
 
@@ -58,6 +68,9 @@ __all__ = [
     'CHECK_IN_TEXT',
     'CHECK_IN_GUIDANCE_OFFER',
     'DELETE_CONFIRM',
+    'SETTINGS_MENU',
+    'SETTINGS_TIME',
+    'SETTINGS_PAUSE_LENGTH',
     'start',
     'handle_name',
     'handle_timezone',
@@ -75,6 +88,10 @@ __all__ = [
     'toggle_flag',
     'request_delete',
     'handle_delete_confirmation',
+    'show_settings',
+    'handle_settings_choice',
+    'handle_settings_time',
+    'handle_pause_length',
     'cancel',
     'recover_state',
     'register',
@@ -92,6 +109,7 @@ def register(application: Application) -> None:
         CommandHandler('export', send_export),
         CommandHandler('flag', toggle_flag),
         CommandHandler('delete', request_delete),
+        CommandHandler('settings', show_settings),
     ]
     handler = ConversationHandler(
         entry_points=[
@@ -113,6 +131,9 @@ def register(application: Application) -> None:
             CHECK_IN_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_entry_text)],
             CHECK_IN_GUIDANCE_OFFER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_guidance_offer)],
             DELETE_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_delete_confirmation)],
+            SETTINGS_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_settings_choice)],
+            SETTINGS_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_settings_time)],
+            SETTINGS_PAUSE_LENGTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pause_length)],
         },
         # Commands reach an active conversation through the fallbacks, which are
         # consulted only after the current state's own handlers decline.
