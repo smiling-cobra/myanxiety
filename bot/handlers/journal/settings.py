@@ -1,5 +1,7 @@
 """/settings — change the reminder time, pause reminders, resume them early.
 
+The menu also carries a Plus button, which opens `/plus` (`plus.py`).
+
 Service calls go through `asyncio.to_thread` — see the package docstring.
 
 Reminders can be paused but never switched off. A pause is stored as
@@ -26,12 +28,14 @@ from telegram.ext import ContextTypes
 from bot.handlers.journal import deps
 from bot.handlers.journal.errors import service_errors
 from bot.handlers.journal.main_menu import main_menu_keyboard
+from bot.handlers.journal.plus import show_plus
 from bot.handlers.journal.states import MAIN_MENU, SETTINGS_MENU, SETTINGS_PAUSE_LENGTH, SETTINGS_TIME
 from bot.keyboards import (
     BACK,
     CHANGE_REMINDER_TIME,
     PAUSE_LENGTHS,
     PAUSE_REMINDERS,
+    PLUS,
     RESUME_REMINDERS,
     get_back_keyboard,
     get_pause_keyboard,
@@ -147,6 +151,9 @@ async def handle_settings_choice(update: Update, context: ContextTypes.DEFAULT_T
         return await _back_to_main_menu(
             update, context, REMINDERS_RESUMED.format(reminder_time=user.get('reminder_time', '—'))
         )
+
+    if choice == PLUS:
+        return await show_plus(update, context)
 
     if choice == BACK:
         name = user.get('name') or context.user_data.get('name', 'there')

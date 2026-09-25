@@ -23,6 +23,12 @@ finishes the job.
 
 What this cannot reach is said to the user in `DELETE_CONFIRM_PROMPT`: the
 Telegram chat itself, and text already processed by Anthropic.
+
+A live Plus subscription is not data but a standing charge, and deleting the
+ledger row that names it would leave Telegram billing an account that no longer
+exists. The handler cancels it through the Bot API before this runs.
+`payments` is deleted with everything else; Telegram's own Star transaction
+record remains the financial record.
 """
 from __future__ import annotations
 
@@ -32,6 +38,7 @@ from repositories.conversation_repo import ConversationRepository
 from repositories.entry_repo import EntryRepository
 from repositories.event_repo import EventRepository
 from repositories.notification_repo import NotificationRepository
+from repositories.payment_repo import PaymentRepository
 from repositories.streak_repo import StreakRepository
 from repositories.usage_repo import UsageRepository
 from repositories.user_repo import UserRepository
@@ -56,6 +63,7 @@ class AccountService:
             ('streaks', streaks.delete_for_user),
             ('notifications', NotificationRepository().delete_for_user),
             ('usage', UsageRepository().delete_for_user),
+            ('payments', PaymentRepository().delete_for_user),
             ('events', EventRepository().delete_for_user),
             ('ptb_user_data', conversations.delete_user_data_for_user),
             ('ptb_conversations', conversations.delete_conversations_for_user),

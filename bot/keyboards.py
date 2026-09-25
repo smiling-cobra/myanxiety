@@ -8,6 +8,7 @@ WEEKLY_SUMMARY = '📈 Weekly Summary'
 EXPORT = '📤 Export'
 HELP = '❓ Help'
 SETTINGS = '⚙️ Settings'
+PLUS = '⭐ Plus'
 BACK = '🔙 Back'
 
 # The buttons a main-menu keyboard can produce. A keyboard outlives the
@@ -100,7 +101,7 @@ PAUSE_LENGTHS = {
 
 def get_settings_keyboard(paused: bool):
     return ReplyKeyboardMarkup(
-        [[CHANGE_REMINDER_TIME], [RESUME_REMINDERS if paused else PAUSE_REMINDERS], [BACK]],
+        [[CHANGE_REMINDER_TIME], [RESUME_REMINDERS if paused else PAUSE_REMINDERS], [PLUS], [BACK]],
         resize_keyboard=True,
     )
 

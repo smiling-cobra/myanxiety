@@ -69,6 +69,7 @@ class TestTextReachesTheStepWaitingForIt:
         (journal.SETTINGS_MENU, '⏸ Pause reminders', 'handle_settings_choice'),
         (journal.SETTINGS_TIME, '21:30', 'handle_settings_time'),
         (journal.SETTINGS_PAUSE_LENGTH, '1 week', 'handle_pause_length'),
+        (journal.SETTINGS_MENU, '⭐ Plus', 'handle_settings_choice'),
     ])
     def test_state_handler_wins_over_lost_state_recovery(self, conversation, state, text, expected):
         assert _route(conversation, state, text) == expected
@@ -87,6 +88,7 @@ class TestCommandsWorkFromAnywhere:
         ('/delete', 'request_delete'),
         ('/flag', 'toggle_flag'),
         ('/settings', 'show_settings'),
+        ('/plus', 'show_plus'),
     ])
     def test_before_any_conversation(self, conversation, command, expected):
         assert _route(conversation, None, command) == expected
@@ -98,6 +100,7 @@ class TestCommandsWorkFromAnywhere:
         ('/delete', 'request_delete'),
         ('/flag', 'toggle_flag'),
         ('/settings', 'show_settings'),
+        ('/plus', 'show_plus'),
         ('/cancel', 'cancel'),
     ])
     @pytest.mark.parametrize('state', [

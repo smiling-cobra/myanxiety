@@ -181,6 +181,7 @@ Included in this plan:
 - Export and delete surfaces
 - Onboarding and copy improvements
 - Reminder settings: change the time, pause for a set period, resume early (Appendix A)
+- Plus, a paid tier paid in Telegram Stars (Appendix C)
 
 Explicitly out of scope for now:
 
@@ -188,7 +189,7 @@ Explicitly out of scope for now:
 - Multi-user admin tooling
 - Data migration
 - Internationalization
-- Monetization work
+- Monetization beyond the Plus tier in Appendix C
 
 ## Open recommendations
 
@@ -233,3 +234,49 @@ Verification:
 3. Resuming early brings back the next due reminder, and it respects today's watermark.
 4. A same-day time change follows the watermark rules above, in both directions.
 5. `tests/test_routing.py` covers `/settings` from every state, and `tests/test_states.py` pins the new state values.
+
+## Appendix C: Phase 9 — Plus, a paid tier in Telegram Stars
+
+This is model 2 of the monetization direction (Appendix B): a paid tier inside the bot. It ships before Phase 7 data exists, by decision; Phase 7 should read the Plus events alongside retention.
+
+Plus is a monthly Telegram Stars subscription at 250 Stars. It unlocks three things, each where an LLM or storage cost sits:
+
+- A written reply to every note. Free users get one to the daily check-in, as before.
+- The AI weekly summary: the pattern paragraph in `/summary` and the scheduled summary. The mood trend and tags in `/summary` stay free.
+- Exports of the last 90 days. The 30-day export stays free.
+
+Free for good: check-ins and notes, tags, streaks, reminders and settings, the crisis path and guidance, History and Stats, the 30-day export and `/delete`. The 40-call `DAILY_LLM_CALL_BUDGET` stays the same runaway ceiling for everyone; it is not a sales lever.
+
+Everyone onboarded before launch gets 30 days of Plus free (`scripts/grant_launch_trial.py`), so nobody loses the weekly summary overnight.
+
+Traps:
+
+- Entitlement is one field, `plus_until`, computed when read (`services/plan_service.py`). Telegram never tells the bot about a cancellation, so there is no "active" flag to keep in step: access runs out at the end of the paid period. Renewals arrive as ordinary `successful_payment` updates and extend it. Extending never shortens.
+- A plan read never raises and answers "free" on failure, like `consume_llm`.
+- Plus is never offered in the check-in or note flow, the crisis path, guidance or reminders. It appears only in `/plus`, the `/summary` pattern slot, the export caption and `/paysupport`. `tests/test_plus.py` runs every check-in and guidance path and asserts no reply mentions Plus.
+- The scheduled summary treats a free user as not due, like a paused reminder: no job, no watermark, no event per tick. It sends no "you don't have this" message.
+- Pre-checkout queries must be answered within ten seconds, on every path, including a failed check. Payment handlers run in handler group -1, outside the `ConversationHandler`, and `run_polling` asks for `Update.ALL_TYPES` so pre-checkout queries are always delivered.
+- `payments` is a new user-linked collection, so it joins the `/delete` fan-out. Before deleting, `/delete` cancels a subscription that could still renew; if the cancel fails, the deletion still happens and the reply tells the user to cancel in Telegram. Telegram's Star transaction record stays the financial record.
+- Telegram requires `/paysupport` for bots that take payments.
+- A `successful_payment` update is delivered once: PTB marks every fetched update read, even when its handler fails. A payment that fails to record is logged as `PLUS_UNRECORDED` with its charge id, the user is told it is safe, and `scripts/reconcile_payments.py` records it from Telegram's `getStarTransactions`.
+- Because `/delete` doesn't wait for the cancel, a renewal can arrive for an account that no longer exists. It is refunded and cancelled, and nothing is stored.
+- A refund must stick. A replayed charge that was refunded does not extend Plus. `/refund` writes the ledger straight after refunding, so running it again skips the refund and only retries a failed cancel.
+
+_Status: complete. `/plus` (also a Settings button) shows the offer or the current period; `bot/handlers/payments.py` handles pre-checkout, successful payments, `/admin_plus` and `/refund`; `services/payment_service.py` holds the checkout rules and the ledger. No conversation states were added._
+
+Primary anchors:
+
+- [services/plan_service.py](../services/plan_service.py)
+- [services/payment_service.py](../services/payment_service.py)
+- [bot/handlers/payments.py](../bot/handlers/payments.py)
+- [bot/handlers/journal/plus.py](../bot/handlers/journal/plus.py)
+- [scripts/grant_launch_trial.py](../scripts/grant_launch_trial.py)
+- [scripts/reconcile_payments.py](../scripts/reconcile_payments.py)
+
+Rollout:
+
+1. Deploy on a weekday. Scheduled summaries go out on a 7-day cadence, and a day without the trial costs at most one of them.
+2. Run `fly ssh console -C "python -m scripts.grant_launch_trial --dry-run"`, then again without `--dry-run`.
+3. Set `ADMIN_TELEGRAM_IDS` and `SUPPORT_CONTACT` with `fly secrets set`.
+4. From an admin account: `/admin_plus off` and check the free paths; `/plus`, pay 250 Stars, write a note and see a reply; `/refund <charge_id>` and check the Stars come back and the subscription shows as cancelled in Telegram → Settings → My Stars.
+5. Run `fly ssh console -C "python -m scripts.reconcile_payments --dry-run"`: it should report the test payment as already recorded. Afterwards, run it whenever the logs show `PLUS_UNRECORDED`.

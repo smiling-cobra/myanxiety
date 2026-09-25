@@ -80,6 +80,21 @@ REMINDERS_RESUMED = 'reminders_resumed'
 # re-links them. Its props are counts, which join to nothing.
 ACCOUNT_DELETED = 'account_deleted'
 
+# Plus. `status` is free, trial or plus; `reason` and `surface` are closed
+# vocabularies from services/payment_service.py and the call sites.
+PLUS_VIEWED = 'plus_viewed'
+PLUS_CHECKOUT_REJECTED = 'plus_checkout_rejected'
+PLUS_PURCHASED = 'plus_purchased'
+PLUS_REFUNDED = 'plus_refunded'
+PLUS_GRANTED = 'plus_granted'
+PAYWALL_SHOWN = 'paywall_shown'
+# A charge for an account that no longer exists, refunded automatically. Like
+# ACCOUNT_DELETED, recorded with no telegram_id: the account is gone.
+PLUS_ORPHAN_REFUNDED = 'plus_orphan_refunded'
+# Telegram took the payment but it could not be recorded. Repaired by
+# scripts/reconcile_payments.py; this counts how often that is needed.
+PLUS_RECORD_FAILED = 'plus_record_failed'
+
 # Spend and failure
 LLM_BUDGET_EXCEEDED = 'llm_budget_exceeded'
 HANDLER_ERROR = 'handler_error'
