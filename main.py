@@ -17,17 +17,26 @@ logging.getLogger('httpx').setLevel(logging.WARNING)
 
 load_dotenv()
 
+from config import require_config
+
+# Before the imports below: they construct services, and a missing secret would
+# otherwise surface as a traceback from whichever one reads it first.
+require_config()
+
 from telegram.ext import Application
 from bot.handlers import commands, errors, journal
 from bot.persistence import MongoPersistence
 from db.db import get_db
+from db.indexes import ensure_indexes
 from services.scheduler_service import SchedulerService
 
 telegram_bot_token = os.environ.get('TELEGRAM_TOKEN')
 
 
 def main() -> None:
-    get_db()  # fail fast on a missing MONGODB_URI, not on the first check-in
+    # Also the boot-time connectivity check: an unreachable database raises here,
+    # not on the first check-in.
+    ensure_indexes(get_db())
 
     application = (
         Application.builder()
