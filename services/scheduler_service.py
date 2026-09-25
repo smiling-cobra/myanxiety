@@ -12,6 +12,7 @@ from services import analytics_service as analytics
 from services.analytics_service import AnalyticsService
 from services.journal_service import JournalService, MIN_ENTRIES_FOR_WEEKLY_SUMMARY
 from services.llm_service import LlmService
+from services.plan_service import is_plus
 from services.usage_service import UsageService
 from services.user_service import UserService
 
@@ -322,6 +323,13 @@ class SchedulerService:
             return False
 
     def _weekly_summary_due(self, user: dict, today: str) -> bool:
+        # The scheduled summary is a Plus feature. A free user is simply not due,
+        # like a paused reminder: no job, no watermark, no event on every tick.
+        # Nothing is sent to say so — a scheduled "you don't have this" would be
+        # a sales pitch nobody asked for. Plus bought today makes the user due at
+        # once, because `last_weekly_summary_sent` is still old.
+        if not is_plus(user):
+            return False
         if user.get('last_weekly_summary_check') == today:
             return False
 

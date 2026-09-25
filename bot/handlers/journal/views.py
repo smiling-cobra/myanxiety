@@ -24,6 +24,7 @@ from messages.strings import (
     WEEKLY_SUMMARY_EMPTY,
     WEEKLY_SUMMARY_HEADER,
     WEEKLY_SUMMARY_LLM_INTRO,
+    WEEKLY_SUMMARY_PLUS_ONLY,
     WEEKLY_SUMMARY_TAGS,
     WEEKLY_SUMMARY_BUDGET_REACHED,
     WEEKLY_SUMMARY_TOO_FEW,
@@ -151,11 +152,18 @@ async def _pattern_paragraph(telegram_id: int, timezone_name: str | None, entrie
 
     The trend rows and tag counts above it are computed locally and always
     render. Only this paragraph costs an Anthropic call, so it is the only part
-    a thin week or an exhausted budget can remove — the user still gets their
-    week either way.
+    a thin week, an exhausted budget or the free tier can remove — the user
+    still gets their week either way.
     """
     if len(entries) < MIN_ENTRIES_FOR_WEEKLY_SUMMARY:
         return WEEKLY_SUMMARY_TOO_FEW
+
+    # Checked before the budget, so a free user never has a call reserved.
+    if not await asyncio.to_thread(deps.plan_svc.is_plus, telegram_id):
+        await asyncio.to_thread(
+            deps.analytics_svc.track, analytics.PAYWALL_SHOWN, telegram_id, surface='weekly_summary_view'
+        )
+        return WEEKLY_SUMMARY_PLUS_ONLY
 
     if not await asyncio.to_thread(deps.usage_svc.consume_llm, telegram_id, 1, timezone_name):
         await asyncio.to_thread(

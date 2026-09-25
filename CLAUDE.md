@@ -60,7 +60,8 @@ This keeps the loop responsive; it does not make updates concurrent. Updates are
   Before the reminder-time step, `/settings` answers and returns None, which leaves the step in progress where it was.
   At the optional cohort question the account is already complete, so settings open like any other command there
 
-`/export` and `/flag` (`export.py`) are single-step commands that return to `MAIN_MENU`.
+`/export` and `/flag` (`export.py`) and `/plus` (`plus.py`, also a button in the Settings menu) are single-step
+commands that return to `MAIN_MENU`.
 
 **Routing.** Every command is listed both as an entry point and as a fallback, and `allow_reentry` is
 off. Do not turn it back on. Re-entry checks the entry points *before* the current state's handlers,
@@ -80,11 +81,11 @@ thresholds), `deps.py` (service singletons, reached as `deps.llm_svc` etc.), `er
 |---|---|
 | `bot/handlers/` | Telegram command and conversation handlers |
 | `bot/keyboards.py` | ReplyKeyboard definitions (main menu, mood 1–10) |
-| `services/` | Business logic — `LlmService`, `UserService`, `JournalService`, `SchedulerService`, `AnalyticsService`, `UsageService`, `ExportService`, `AccountService` |
+| `services/` | Business logic — `LlmService`, `UserService`, `JournalService`, `SchedulerService`, `AnalyticsService`, `UsageService`, `ExportService`, `AccountService`, `PlanService`, `PaymentService` |
 | `services/safety.py` | `detect_crisis` — the deterministic crisis lexicon. Pure: no DB, no network, no LLM |
 | `services/tags.py` | Tag normalisation and the canonical tag vocabulary. Pure |
 | `services/export/` | `/export` — `service.py` (load and package), `digest.py` (what the file says), `markdown.py` (how it looks) |
-| `repositories/` | MongoDB data access — `UserRepository`, `EntryRepository`, `StreakRepository`, `EventRepository`, `UsageRepository`, `NotificationRepository`, `ConversationRepository` |
+| `repositories/` | MongoDB data access — `UserRepository`, `EntryRepository`, `StreakRepository`, `EventRepository`, `UsageRepository`, `NotificationRepository`, `PaymentRepository`, `ConversationRepository` |
 | `db/db.py` | MongoDB connection and collection accessors |
 | `db/indexes.py` | `ensure_indexes`, run at boot: the per-user indexes for `users`, `entries`, `streaks`, `notifications`, `ptb_conversations` |
 | `config.py` | `require_config`, run in `main.py` before any service is imported |
@@ -184,7 +185,9 @@ the main menu comes back as mid-onboarding. `tests/test_states.py` pins the valu
 instead of production.
 
 **PII surfaces and `/delete`** (`AccountService`): `users`, `entries`, `streaks`, `notifications`,
-`usage`, `events`, `ptb_user_data` and `ptb_conversations`, deleted in that order. Every step is
+`usage`, `payments`, `events`, `ptb_user_data` and `ptb_conversations`, deleted in that order. Before
+the fan-out, the handler cancels a Plus subscription that could still renew (`edit_user_star_subscription`);
+a failed cancel does not stop the deletion, and the reply tells the user to cancel in Telegram. Every step is
 attempted, and then `DeletionIncomplete` names any failures; steps are idempotent, so a retry finishes
 the job. **A new collection must join the fan-out.** `tests/test_account_service.py` fails if any
 accessor in `db/db.py` is missing, and it scans the whole database for the id after a real-path seed.
@@ -193,6 +196,22 @@ and returns `END`, which removes the stored conversation state. Writes that are 
 user, like the scheduler watermarks, use the non-upserting `UserService.update`, so a job that is
 already running cannot recreate a deleted user. `account_deleted` is tracked with no `telegram_id`.
 
+**Plus** (development-plan Appendix C): a monthly Telegram Stars subscription. It unlocks a written reply
+to every note, the AI weekly summary (the `/summary` pattern paragraph and the scheduled summary) and
+90-day exports. Everything else, including the 30-day export, stays free.
+
+- Entitlement is one field, `plus_until`, computed when read by `services/plan_service.py`. There is no
+  active flag: Telegram never reports a cancellation, so access lapses at the end of the paid period.
+  `PlanService.is_plus` never raises and answers "free" on failure. `extend` never shortens.
+- Payments are handled in `bot/handlers/payments.py`, in handler group -1, outside the conversation:
+  pre-checkout (always answered, within ten seconds), `successful_payment` (ledger in `payments`, unique
+  on the charge id, so a redelivery is a no-op), `/admin_plus` and `/refund` for `ADMIN_TELEGRAM_IDS`.
+  `run_polling` asks for `Update.ALL_TYPES` so pre-checkout queries always arrive.
+- **Never offer Plus in the entry flow.** Not in check-ins, notes, the crisis path, guidance or reminders.
+  It appears only in `/plus`, the `/summary` pattern slot, the export caption and `/paysupport`.
+  `tests/test_plus.py` enforces this.
+- A free user is not due for the scheduled summary at all (`_weekly_summary_due`): no job, no event.
+
 ## Environment Variables (`.env`)
 
 ```
@@ -200,6 +219,8 @@ TELEGRAM_TOKEN
 CLAUDE_API_KEY
 MONGODB_URI
 ANTHROPIC_MODEL (optional)
+ADMIN_TELEGRAM_IDS (optional — ids allowed /admin_plus and /refund)
+SUPPORT_CONTACT (optional — shown by /paysupport)
 ```
 
 `main.py` checks the first three before importing anything, and exits naming every one that is unset or
@@ -229,3 +250,4 @@ engineering plan wins.
 - **Phase 6 — Productize the therapist artifact**: complete (export brief, onboarding and copy, daily check-in vs. notes, reminder skip)
 - **Phase 7 — Retention experiments**: blocked on 4–6 weeks of Phase 4 data
 - **Phase 8 — Reminder settings**: complete (development-plan Appendix A): `/settings` changes the reminder time, pauses reminders for a set period and resumes them early
+- **Phase 9 — Plus**: complete (development-plan Appendix C): a 250-Star monthly subscription unlocking note replies, the AI weekly summary and 90-day exports, with a 30-day launch trial for existing users

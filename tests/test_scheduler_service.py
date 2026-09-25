@@ -10,7 +10,7 @@ the tick queued, so a test can still assert on messages in one step.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,6 +22,9 @@ from services.scheduler_service import _DUE_WINDOW_MINUTES, SchedulerService
 # Helpers
 # ---------------------------------------------------------------------------
 
+_PLUS_FOREVER = datetime(2100, 1, 1, tzinfo=dt_timezone.utc)
+
+
 def _user(
     telegram_id: int = 1,
     name: str = 'Alice',
@@ -30,6 +33,7 @@ def _user(
     last_reminder_sent: str | None = None,
     last_weekly_summary_sent: str | None = None,
     last_weekly_summary_check: str | None = None,
+    plus: bool = True,
 ) -> dict:
     u = {
         'telegram_id': telegram_id,
@@ -38,6 +42,10 @@ def _user(
         'reminder_time': reminder_time,
         'onboarded': True,
     }
+    # The scheduled weekly summary is a Plus feature, so the default user has
+    # Plus; the free-tier rule has its own tests.
+    if plus:
+        u['plus_until'] = _PLUS_FOREVER
     if last_reminder_sent is not None:
         u['last_reminder_sent'] = last_reminder_sent
     if last_weekly_summary_sent is not None:
@@ -249,6 +257,15 @@ class TestWeeklySummaryDue:
     def test_due_when_never_sent(self):
         assert _svc()._weekly_summary_due(_user(), '2026-03-29') is True
 
+    def test_a_free_user_is_never_due(self):
+        """No job, no watermark and no event per tick: a free user is simply not due."""
+        assert _svc()._weekly_summary_due(_user(plus=False), '2026-03-29') is False
+
+    def test_lapsed_plus_is_free(self):
+        user = _user(plus=False)
+        user['plus_until'] = datetime(2020, 1, 1, tzinfo=dt_timezone.utc)
+        assert _svc()._weekly_summary_due(user, '2026-03-29') is False
+
     def test_due_when_7_days_since_last(self):
         user = _user(last_weekly_summary_sent='2026-03-22')
         assert _svc()._weekly_summary_due(user, '2026-03-29') is True
@@ -310,6 +327,16 @@ class TestTickDefersWork:
             await svc._tick(ctx)
         names = [job['name'] for job in ctx.job_queue.scheduled]
         assert names == ['reminder:1:2026-03-29', 'weekly-summary:1:2026-03-29']
+
+    async def test_a_free_user_gets_the_reminder_and_no_summary_job(self):
+        svc = _svc()
+        svc._user_svc.get_all_onboarded.return_value = [_user(plus=False)]
+        ctx = _context()
+        with _at(9, 0, '2026-03-29'):
+            await svc._tick(ctx)
+        assert [job['name'] for job in ctx.job_queue.scheduled] == ['reminder:1:2026-03-29']
+        svc._usage_svc.consume_llm.assert_not_called()
+        svc._journal_svc.get_weekly_entries.assert_not_called()
 
     async def test_nothing_scheduled_outside_the_window(self):
         svc = _svc()

@@ -12,16 +12,19 @@ from bot.handlers.journal import deps
 from bot.handlers.journal.errors import service_errors
 from bot.handlers.journal.states import MAIN_MENU
 from bot.handlers.journal.main_menu import main_menu_keyboard
-from messages.strings import EXPORT_CAPTION, EXPORT_EMPTY, FLAG_CLEARED, FLAG_NO_ENTRY, FLAG_SET
+from messages.strings import EXPORT_CAPTION, EXPORT_EMPTY, EXPORT_PLUS_LINE, FLAG_CLEARED, FLAG_NO_ENTRY, FLAG_SET
 from services import analytics_service as analytics
-from services.export import EXPORT_DAYS
+from services.export import EXPORT_DAYS, PLUS_EXPORT_DAYS
 from services.time_utils import resolve_timezone, to_local
 
 
 @service_errors('Export')
 async def send_export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     telegram_id = update.effective_user.id
-    export = await asyncio.to_thread(deps.export_svc.build, telegram_id)
+    # The 30-day window is free for good; Plus looks further back.
+    plus = await asyncio.to_thread(deps.plan_svc.is_plus, telegram_id)
+    days = PLUS_EXPORT_DAYS if plus else EXPORT_DAYS
+    export = await asyncio.to_thread(deps.export_svc.build, telegram_id, days)
     count = export.entry_count if export else 0
 
     # Whether anyone asks for this at all is the question the v0 export exists
@@ -32,21 +35,26 @@ async def send_export(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         telegram_id,
         entry_count=count,
         flagged_count=export.flagged_count if export else 0,
-        days=EXPORT_DAYS,
+        days=days,
+        plus=plus,
     )
 
     if export is None:
         await update.message.reply_text(
-            EXPORT_EMPTY.format(days=EXPORT_DAYS),
+            EXPORT_EMPTY.format(days=days),
             parse_mode='Markdown',
             reply_markup=await main_menu_keyboard(telegram_id),
         )
         return MAIN_MENU
 
+    caption = EXPORT_CAPTION.format(days=days, count=count, entries='entry' if count == 1 else 'entries')
+    if not plus:
+        caption += EXPORT_PLUS_LINE
+        await asyncio.to_thread(deps.analytics_svc.track, analytics.PAYWALL_SHOWN, telegram_id, surface='export')
     await update.message.reply_document(
         document=export.content,
         filename=export.filename,
-        caption=EXPORT_CAPTION.format(days=EXPORT_DAYS, count=count, entries='entry' if count == 1 else 'entries'),
+        caption=caption,
         reply_markup=await main_menu_keyboard(telegram_id),
     )
     return MAIN_MENU

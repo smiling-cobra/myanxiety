@@ -11,6 +11,8 @@ from services.analytics_service import AnalyticsService
 from services.export import ExportService
 from services.journal_service import JournalService
 from services.llm_service import LlmService
+from services.payment_service import PaymentService
+from services.plan_service import PlanService
 from services.usage_service import UsageService
 from services.user_service import UserService
 
@@ -21,3 +23,5 @@ analytics_svc = AnalyticsService()
 usage_svc = UsageService()
 export_svc = ExportService()
 account_svc = AccountService()
+plan_svc = PlanService()
+payment_svc = PaymentService()

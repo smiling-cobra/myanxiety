@@ -80,6 +80,15 @@ REMINDERS_RESUMED = 'reminders_resumed'
 # re-links them. Its props are counts, which join to nothing.
 ACCOUNT_DELETED = 'account_deleted'
 
+# Plus. `status` is free, trial or plus; `reason` and `surface` are closed
+# vocabularies from services/payment_service.py and the call sites.
+PLUS_VIEWED = 'plus_viewed'
+PLUS_CHECKOUT_REJECTED = 'plus_checkout_rejected'
+PLUS_PURCHASED = 'plus_purchased'
+PLUS_REFUNDED = 'plus_refunded'
+PLUS_GRANTED = 'plus_granted'
+PAYWALL_SHOWN = 'paywall_shown'
+
 # Spend and failure
 LLM_BUDGET_EXCEEDED = 'llm_budget_exceeded'
 HANDLER_ERROR = 'handler_error'

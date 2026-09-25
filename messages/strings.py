@@ -23,6 +23,8 @@ PRIVACY_NOTICE = (
     "• */export* sends you a file of your last 30 days — a summary, then everything you wrote "
     "in full — in this chat. It's made for sharing with a therapist, but nobody sees it unless "
     "you send it to them yourself.\n"
+    "• If you subscribe to Plus, Telegram processes the payment in Stars. I keep only the "
+    "payment reference, amount and dates.\n"
     "• */delete* permanently removes everything this bot stores about you, in one step.\n"
     "• I'm a journalling tool. I'm not a therapist, a diagnosis, or a crisis service.\n\n"
     "Type */privacy* any time to read this again."
@@ -125,6 +127,14 @@ NOTE_SAVED = (
     "Want to talk about this in therapy? Send /flag."
 )
 
+# A note's reply for a Plus user: the acknowledgement, then a reflection. Still
+# no streak line — that belongs to the daily check-in.
+NOTE_REPLY = (
+    "Noted, {name} — added to today's journal. 📝\n\n"
+    "{llm_response}\n\n"
+    "Want to talk about this in therapy? Send /flag."
+)
+
 HISTORY_EMPTY = "You haven't made any entries yet. Tap *Check In* to start!"
 
 HISTORY_HEADER = "Here are your last {count} entries:\n\n"
@@ -156,6 +166,8 @@ HELP_MESSAGE = (
     "*/export* — Get a file of your recent entries\n"
     "*/flag* — Mark your latest entry to raise in your next session\n"
     "*/settings* — Change your reminder time, or pause reminders\n"
+    "*/plus* — Plus: replies to every entry, weekly insights, 90-day exports\n"
+    "*/paysupport* — Help with payments, cancelling and refunds\n"
     "*/delete* — Permanently delete everything I store about you\n"
     "*/privacy* — What happens to what you write\n"
     "*/cancel* — End the current session\n\n"
@@ -276,7 +288,8 @@ DELETE_CONFIRM_PROMPT = (
     "It can't be undone. If you want a copy first, choose *No* and send */export*.\n\n"
     "Two things this can't reach: the messages in this Telegram chat (you can clear the "
     "chat yourself), and text that was already sent to Anthropic, which is handled under "
-    "Anthropic's own data retention terms."
+    "Anthropic's own data retention terms.\n\n"
+    "If you have Plus, the subscription is cancelled too. The current period isn't refunded."
 )
 
 DELETE_DONE = (
@@ -345,3 +358,76 @@ REMINDER_MESSAGE = (
 )
 
 WRONG_MOOD = "Please enter a number between 1 and 10."
+
+# --- Plus ------------------------------------------------------------------
+# Plus is offered only on /plus, in the weekly summary's pattern slot, in the
+# export caption and on /paysupport. Never in the check-in or note flow, the
+# crisis path, guidance or reminders: nobody who has just written about a hard
+# moment should meet a sales pitch. tests/test_plus_gating.py holds that line.
+# Wellness copy throughout — Plus buys features, not outcomes.
+
+PLUS_PERKS = (
+    "⭐ *AnxietyJournal Plus*\n\n"
+    "• A written reply to every entry, not just your first check-in of the day\n"
+    "• Your weekly pattern summary, in /summary and every Sunday\n"
+    "• Exports covering the last 90 days, not just 30\n\n"
+    "Check-ins, notes, reminders, crisis resources, your 30-day export and /delete "
+    "stay free, always."
+)
+
+PLUS_OFFER = PLUS_PERKS + "\n\n*{price} Stars a month.* Cancel any time in Telegram."
+
+PLUS_TRIAL_LINE = "\n\nYou have Plus free until *{date}*. Subscribe to keep it after that."
+
+PLUS_ACTIVE = (
+    "⭐ *You have Plus* — thank you.\n\n"
+    "Your current period runs until *{date}*. Unless you've cancelled, it renews by itself.\n\n"
+    "To cancel, open Telegram → Settings → My Stars. You keep Plus until the end of "
+    "the period you've paid for."
+)
+
+PLUS_SUBSCRIBE_BUTTON = "Subscribe — {price} ⭐ / month"
+
+PLUS_NOT_READY = "Plus will be here as soon as we've finished getting you set up."
+
+PLUS_WELCOME = (
+    "⭐ *Welcome to Plus*, and thank you.\n\n"
+    "You'll now get a written reply to every entry, your weekly pattern summary, and "
+    "90-day exports. Your period runs until *{date}* and renews by itself — cancel any "
+    "time in Telegram → Settings → My Stars."
+)
+
+PLUS_CHECKOUT_REFUSED = "This payment couldn't be completed. Please open /plus and try again."
+
+PLUS_CHECKOUT_NO_ACCOUNT = "Please finish setting up your journal with /start before subscribing."
+
+WEEKLY_SUMMARY_PLUS_ONLY = "\n_Written pattern insights for your week are part of Plus — see /plus._"
+
+EXPORT_PLUS_LINE = "\n\nWith Plus, exports cover the last 90 days — see /plus."
+
+# Required by Telegram for bots that accept payments. `contact` comes from the
+# SUPPORT_CONTACT env var — messages typed into this chat reach no person.
+PAYSUPPORT_CONTACT_FALLBACK = "use the contact in this bot's profile description"
+PAYSUPPORT_MESSAGE = (
+    "*Payments and Plus*\n\n"
+    "• *Cancel*: open Telegram → Settings → My Stars and cancel the subscription. You "
+    "keep Plus until the end of the period you've paid for, and you won't be charged again.\n"
+    "• *Refunds*: if something went wrong with a payment, write to us within 14 days and "
+    "we'll refund it in Stars.\n"
+    "• *Contact*: {contact} — describe the problem and include the date of the payment.\n\n"
+    "Payments are processed by Telegram. We store only the payment reference, amount and "
+    "dates — never card details."
+)
+
+ADMIN_PLUS_ON = "Admin: Plus on until {date}."
+ADMIN_PLUS_OFF = "Admin: Plus off."
+ADMIN_PLUS_USAGE = "Usage: /admin_plus on [days] | /admin_plus off"
+ADMIN_REFUND_USAGE = "Usage: /refund <telegram_payment_charge_id>"
+ADMIN_REFUND_UNKNOWN = "Admin: no payment with that charge id in the ledger."
+ADMIN_REFUND_DONE = "Admin: refunded {amount} ⭐ to user {user}. Subscription cancelled: {cancelled}."
+ADMIN_REFUND_FAILED = "Admin: Telegram refused the refund — nothing was changed. See the logs."
+
+DELETE_SUBSCRIPTION_NOT_CANCELLED = (
+    "\n\nOne more thing: I couldn't cancel your Plus subscription automatically. Please "
+    "cancel it in Telegram → Settings → My Stars so you aren't charged again."
+)

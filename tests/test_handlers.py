@@ -458,11 +458,33 @@ class TestShowWeeklySummary:
 
     async def test_enough_entries_calls_llm_summary(self):
         with patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
-             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm, \
+             patch('bot.handlers.journal.deps.plan_svc') as plan:
+            plan.is_plus.return_value = True
             mock_svc.get_weekly_entries.return_value = [_entry(7), _entry(5, 1), _entry(3, 2)]
             mock_llm.get_weekly_summary.return_value = 'Summary.'
             await show_weekly_summary(_update(''), _context())
         mock_llm.get_weekly_summary.assert_called_once()
+
+    async def test_a_free_user_gets_the_week_without_the_llm_paragraph(self):
+        """The trend and tags are local and free; only the pattern paragraph is Plus."""
+        from messages.strings import WEEKLY_SUMMARY_PLUS_ONLY
+        update = _update('')
+        with patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm, \
+             patch('bot.handlers.journal.deps.usage_svc') as usage, \
+             patch('bot.handlers.journal.deps.analytics_svc') as analytics, \
+             patch('bot.handlers.journal.deps.plan_svc') as plan:
+            plan.is_plus.return_value = False
+            mock_svc.get_weekly_entries.return_value = [_entry(7), _entry(5, 1), _entry(3, 2)]
+            await show_weekly_summary(update, _context())
+        text = update.message.reply_text.call_args.args[0]
+        assert WEEKLY_SUMMARY_PLUS_ONLY in text
+        assert '▓' in text
+        mock_llm.get_weekly_summary.assert_not_called()
+        usage.consume_llm.assert_not_called()  # nothing reserved for a call that won't be made
+        tracked = {c.args[0]: c.kwargs for c in analytics.track.call_args_list}
+        assert tracked['paywall_shown'] == {'surface': 'weekly_summary_view'}
 
     async def test_too_few_entries_skips_llm_summary(self):
         update = _update('')
@@ -873,7 +895,7 @@ class TestHandlersAreCoroutines:
         app = MagicMock()
         journal.register(app)
         commands.register(app)
-        assert app.add_handler.call_count == 3
+        assert app.add_handler.call_count == 4  # the conversation, /help, /privacy, /paysupport
 
 
 # ---------------------------------------------------------------------------
@@ -1185,7 +1207,9 @@ class TestWeeklySummaryAtTheCeiling:
         ]
         with _exhausted(), \
              patch('bot.handlers.journal.deps.journal_svc') as mock_svc, \
-             patch('bot.handlers.journal.deps.llm_svc') as mock_llm:
+             patch('bot.handlers.journal.deps.llm_svc') as mock_llm, \
+             patch('bot.handlers.journal.deps.plan_svc') as plan:
+            plan.is_plus.return_value = True
             mock_svc.get_weekly_entries.return_value = entries
             await show_weekly_summary(update, _context())
             self.mock_llm = mock_llm
@@ -1553,7 +1577,7 @@ class TestSendExport:
             await send_export(_update('/export'), _context())
         event, _ = analytics.track.call_args.args
         assert event == 'export_requested'
-        assert analytics.track.call_args.kwargs == {'entry_count': 0, 'flagged_count': 0, 'days': 30}
+        assert analytics.track.call_args.kwargs == {'entry_count': 0, 'flagged_count': 0, 'days': 30, 'plus': False}
 
     async def test_the_menu_button_exports(self):
         from bot.handlers.journal import handle_main_menu
