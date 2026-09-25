@@ -120,6 +120,28 @@ class TestRecord:
         from db.db import payments_collection
         assert payments_collection().count_documents({}) == 1
 
+    def test_a_replayed_refunded_charge_does_not_restore_plus(self):
+        _save_user()
+        svc = PaymentService()
+        with _at():
+            _record(svc)
+            svc.mark_refunded('c1')
+            again = _record(svc)
+            assert not is_plus(_stored())
+        assert again.new is False
+        assert PaymentRepository().find('c1')['refunded_at'] is not None
+
+    def test_a_replay_repairs_a_missing_extension(self):
+        """A crash between the ledger insert and the extension is fixed by a replay."""
+        _save_user()
+        svc = PaymentService()
+        with _at():
+            PaymentRepository().record({
+                'telegram_id': USER_ID, 'telegram_payment_charge_id': 'c1', 'refunded_at': None,
+            })
+            _record(svc)
+            assert is_plus(_stored())
+
     def test_a_renewal_extends_plus(self):
         _save_user()
         svc = PaymentService()

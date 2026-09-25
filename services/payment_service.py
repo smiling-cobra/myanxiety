@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from repositories.payment_repo import PaymentRepository
 from repositories.user_repo import UserRepository
 from services import time_utils
-from services.plan_service import SOURCE_SUBSCRIPTION, PlanService
+from services.plan_service import SOURCE_SUBSCRIPTION, PlanService, plus_until
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +83,11 @@ class PaymentService:
     ) -> PaymentResult:
         """Write a payment to the ledger and extend Plus to the period it paid for.
 
-        The extension runs even for a charge already in the ledger. It is
-        idempotent (`PlanService.extend` never shortens), and it means a crash
-        between the insert and the extension is repaired by Telegram's redelivery
-        instead of leaving someone paid and without Plus.
+        A charge already in the ledger is extended again, which is idempotent
+        (`PlanService.extend` never shortens). That lets a replay — the reconcile
+        script, or an update redelivered after a hard crash — repair a crash
+        between the insert and the extension. A refunded
+        charge is never extended again: a replay must not undo a refund.
         """
         now = time_utils.now()
         until = time_utils.as_utc(expires_at) if expires_at else now + SUBSCRIPTION_PERIOD
@@ -103,6 +104,12 @@ class PaymentService:
             'created_at': now,
             'refunded_at': None,
         })
+        if not new:
+            stored = self._payments.find(charge_id)
+            if stored is not None and stored.get('refunded_at') is not None:
+                return PaymentResult(
+                    new=False, renewal=False, plus_until=plus_until(self._users.find(telegram_id)) or now
+                )
         stored_until = self._plan.extend(telegram_id, until, SOURCE_SUBSCRIPTION)
         return PaymentResult(
             new=new,
