@@ -205,8 +205,15 @@ to every note, the AI weekly summary (the `/summary` pattern paragraph and the s
   `PlanService.is_plus` never raises and answers "free" on failure. `extend` never shortens.
 - Payments are handled in `bot/handlers/payments.py`, in handler group -1, outside the conversation:
   pre-checkout (always answered, within ten seconds), `successful_payment` (ledger in `payments`, unique
-  on the charge id, so a redelivery is a no-op), `/admin_plus` and `/refund` for `ADMIN_TELEGRAM_IDS`.
+  on the charge id, so a replay is a no-op), `/admin_plus` and `/refund` for `ADMIN_TELEGRAM_IDS`.
   `run_polling` asks for `Update.ALL_TYPES` so pre-checkout queries always arrive.
+- **A `successful_payment` update arrives once.** PTB marks fetched updates read whether or not the handler
+  succeeds. A failed record is logged as `PLUS_UNRECORDED charge=… user=…`, the user is told their payment
+  is safe, and `scripts/reconcile_payments.py` replays `getStarTransactions` into the ledger.
+- A charge for an account that no longer exists (a renewal after a `/delete` that couldn't cancel) is not
+  stored: the handler cancels and refunds it. A refunded charge is never extended again, even on a replay.
+  `/refund` marks the ledger straight after the refund and is safe to repeat, so a failed cancel is retried
+  by running it again.
 - **Never offer Plus in the entry flow.** Not in check-ins, notes, the crisis path, guidance or reminders.
   It appears only in `/plus`, the `/summary` pattern slot, the export caption and `/paysupport`.
   `tests/test_plus.py` enforces this.

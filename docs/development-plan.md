@@ -258,6 +258,9 @@ Traps:
 - Pre-checkout queries must be answered within ten seconds, on every path, including a failed check. Payment handlers run in handler group -1, outside the `ConversationHandler`, and `run_polling` asks for `Update.ALL_TYPES` so pre-checkout queries are always delivered.
 - `payments` is a new user-linked collection, so it joins the `/delete` fan-out. Before deleting, `/delete` cancels a subscription that could still renew; if the cancel fails, the deletion still happens and the reply tells the user to cancel in Telegram. Telegram's Star transaction record stays the financial record.
 - Telegram requires `/paysupport` for bots that take payments.
+- A `successful_payment` update is delivered once: PTB marks every fetched update read, even when its handler fails. A payment that fails to record is logged as `PLUS_UNRECORDED` with its charge id, the user is told it is safe, and `scripts/reconcile_payments.py` records it from Telegram's `getStarTransactions`.
+- Because `/delete` doesn't wait for the cancel, a renewal can arrive for an account that no longer exists. It is refunded and cancelled, and nothing is stored.
+- A refund must stick. A replayed charge that was refunded does not extend Plus. `/refund` writes the ledger straight after refunding, so running it again skips the refund and only retries a failed cancel.
 
 _Status: complete. `/plus` (also a Settings button) shows the offer or the current period; `bot/handlers/payments.py` handles pre-checkout, successful payments, `/admin_plus` and `/refund`; `services/payment_service.py` holds the checkout rules and the ledger. No conversation states were added._
 
@@ -268,6 +271,7 @@ Primary anchors:
 - [bot/handlers/payments.py](../bot/handlers/payments.py)
 - [bot/handlers/journal/plus.py](../bot/handlers/journal/plus.py)
 - [scripts/grant_launch_trial.py](../scripts/grant_launch_trial.py)
+- [scripts/reconcile_payments.py](../scripts/reconcile_payments.py)
 
 Rollout:
 
@@ -275,3 +279,4 @@ Rollout:
 2. Run `fly ssh console -C "python -m scripts.grant_launch_trial --dry-run"`, then again without `--dry-run`.
 3. Set `ADMIN_TELEGRAM_IDS` and `SUPPORT_CONTACT` with `fly secrets set`.
 4. From an admin account: `/admin_plus off` and check the free paths; `/plus`, pay 250 Stars, write a note and see a reply; `/refund <charge_id>` and check the Stars come back and the subscription shows as cancelled in Telegram → Settings → My Stars.
+5. Run `fly ssh console -C "python -m scripts.reconcile_payments --dry-run"`: it should report the test payment as already recorded. Afterwards, run it whenever the logs show `PLUS_UNRECORDED`.
