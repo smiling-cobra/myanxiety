@@ -18,7 +18,8 @@ gets no reply at all, so their existence isn't advertised:
 * `/admin_plus on [days]` and `/admin_plus off` move the admin's own Plus, to
   test both sides of every gate without paying;
 * `/refund <charge_id>` refunds a payment in Stars, cancels the subscription it
-  belongs to, and ends that user's Plus.
+  belongs to, and ends that user's Plus. It is safe to repeat: a charge already
+  refunded skips straight to the cancel, so a cancel that failed can be retried.
 """
 import asyncio
 import logging
@@ -37,6 +38,7 @@ from messages.strings import (
     ADMIN_PLUS_USAGE,
     ADMIN_REFUND_DONE,
     ADMIN_REFUND_FAILED,
+    ADMIN_REFUND_NOT_CANCELLED,
     ADMIN_REFUND_UNKNOWN,
     ADMIN_REFUND_USAGE,
     PLUS_CHECKOUT_NO_ACCOUNT,
@@ -52,6 +54,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_ADMIN_PLUS_DAYS = 30
 _CHECK_FAILED = 'check_failed'
+_ALREADY_REFUNDED = 'CHARGE_ALREADY_REFUNDED'
 
 
 def _date_label(value) -> str:
@@ -173,6 +176,23 @@ async def admin_plus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(ADMIN_PLUS_USAGE)
 
 
+async def _refund_once(context: ContextTypes.DEFAULT_TYPE, user_id: int, charge_id: str) -> bool:
+    """Refund a charge and record it in the ledger. False if Telegram refused it."""
+    try:
+        await context.bot.refund_star_payment(user_id=user_id, telegram_payment_charge_id=charge_id)
+    except TelegramError as exc:
+        # Refunded already — by a run that failed before writing the ledger, or
+        # outside the bot. Record it and carry on to the cancel.
+        if _ALREADY_REFUNDED not in str(exc).upper():
+            logger.exception('Refund of %s for user %s was refused by Telegram.', charge_id, user_id)
+            return False
+    # Written straight after the refund, before anything else can fail, so a
+    # repeat of /refund never asks Telegram to refund twice.
+    await asyncio.to_thread(deps.payment_svc.mark_refunded, charge_id)
+    await asyncio.to_thread(deps.analytics_svc.track, analytics.PLUS_REFUNDED, user_id)
+    return True
+
+
 async def refund(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
@@ -187,21 +207,19 @@ async def refund(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     user_id = payment['telegram_id']
-    try:
-        await context.bot.refund_star_payment(user_id=user_id, telegram_payment_charge_id=charge_id)
-    except TelegramError:
-        logger.exception('Refund of %s for user %s was refused by Telegram.', charge_id, user_id)
+    if payment.get('refunded_at') is None and not await _refund_once(context, user_id, charge_id):
         await update.message.reply_text(ADMIN_REFUND_FAILED)
         return
 
-    # The Stars are back; now make sure the subscription can't charge again.
-    # Best-effort: it may already be cancelled, or not be a subscription at all.
-    cancelled = await cancel_subscription(context, user_id, charge_id)
-    await asyncio.to_thread(deps.payment_svc.mark_refunded, charge_id)
-    await asyncio.to_thread(deps.analytics_svc.track, analytics.PLUS_REFUNDED, user_id)
-    await update.message.reply_text(
-        ADMIN_REFUND_DONE.format(amount=payment['amount'], user=user_id, cancelled='yes' if cancelled else 'no')
-    )
+    # The Stars are back; now make sure the subscription can't charge again. A
+    # one-off payment, or one the user already cancelled, is cancelled twice
+    # harmlessly. If Telegram refuses, running /refund again retries this alone.
+    if await cancel_subscription(context, user_id, charge_id):
+        await update.message.reply_text(ADMIN_REFUND_DONE.format(amount=payment['amount'], user=user_id))
+    else:
+        await update.message.reply_text(
+            ADMIN_REFUND_NOT_CANCELLED.format(amount=payment['amount'], user=user_id, charge_id=charge_id)
+        )
 
 
 def register(application: Application) -> None:

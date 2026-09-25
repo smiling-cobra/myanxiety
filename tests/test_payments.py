@@ -408,13 +408,48 @@ class TestRefund:
     async def test_a_refused_refund_changes_nothing(self, admin):
         await self._paid()
         ctx = _bot_context(['c1'])
-        ctx.bot.refund_star_payment.side_effect = BadRequest('CHARGE_ALREADY_REFUNDED')
+        ctx.bot.refund_star_payment.side_effect = BadRequest('CHARGE_NOT_FOUND')
         update = make_update('', user_id=ADMIN_ID)
         with _at():
             await payments.refund(update, ctx)
             assert is_plus(_stored())
         assert PaymentRepository().find('c1')['refunded_at'] is None
+        ctx.bot.edit_user_star_subscription.assert_not_called()
         assert update.message.reply_text.call_args.args[0] == strings.ADMIN_REFUND_FAILED
+
+    async def test_a_failed_cancel_is_reported_and_can_be_retried(self, admin):
+        await self._paid()
+        first = _bot_context(['c1'])
+        first.bot.edit_user_star_subscription.side_effect = BadRequest('nope')
+        update = make_update('', user_id=ADMIN_ID)
+        with _at():
+            await payments.refund(update, first)
+            assert not is_plus(_stored())
+        assert PaymentRepository().find('c1')['refunded_at'] is not None
+        assert '/refund c1 again' in update.message.reply_text.call_args.args[0]
+
+        retry = _bot_context(['c1'])
+        again = make_update('', user_id=ADMIN_ID)
+        with _at():
+            await payments.refund(again, retry)
+        retry.bot.refund_star_payment.assert_not_called()
+        retry.bot.edit_user_star_subscription.assert_awaited_once_with(
+            user_id=USER_ID, telegram_payment_charge_id='c1', is_canceled=True
+        )
+        assert 'Subscription cancelled: yes' in again.message.reply_text.call_args.args[0]
+
+    async def test_a_charge_telegram_already_refunded_is_recorded_and_cancelled(self, admin):
+        """A run that refunded but died before writing the ledger, repeated."""
+        await self._paid()
+        ctx = _bot_context(['c1'])
+        ctx.bot.refund_star_payment.side_effect = BadRequest('Charge_already_refunded')
+        update = make_update('', user_id=ADMIN_ID)
+        with _at():
+            await payments.refund(update, ctx)
+            assert not is_plus(_stored())
+        assert PaymentRepository().find('c1')['refunded_at'] is not None
+        ctx.bot.edit_user_star_subscription.assert_awaited_once()
+        assert 'Subscription cancelled: yes' in update.message.reply_text.call_args.args[0]
 
     async def test_an_unknown_charge_is_reported(self, admin):
         update = make_update('', user_id=ADMIN_ID)

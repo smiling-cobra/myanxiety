@@ -424,7 +424,11 @@ ADMIN_PLUS_OFF = "Admin: Plus off."
 ADMIN_PLUS_USAGE = "Usage: /admin_plus on [days] | /admin_plus off"
 ADMIN_REFUND_USAGE = "Usage: /refund <telegram_payment_charge_id>"
 ADMIN_REFUND_UNKNOWN = "Admin: no payment with that charge id in the ledger."
-ADMIN_REFUND_DONE = "Admin: refunded {amount} ⭐ to user {user}. Subscription cancelled: {cancelled}."
+ADMIN_REFUND_DONE = "Admin: refunded {amount} ⭐ to user {user}. Subscription cancelled: yes."
+ADMIN_REFUND_NOT_CANCELLED = (
+    "Admin: refunded {amount} ⭐ to user {user}, but the subscription is still live and can renew. "
+    "Run /refund {charge_id} again to retry the cancel, or ask the user to cancel in Telegram → My Stars."
+)
 ADMIN_REFUND_FAILED = "Admin: Telegram refused the refund — nothing was changed. See the logs."
 
 DELETE_SUBSCRIPTION_NOT_CANCELLED = (
