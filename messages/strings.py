@@ -363,7 +363,7 @@ WRONG_MOOD = "Please enter a number between 1 and 10."
 # Plus is offered only on /plus, in the weekly summary's pattern slot, in the
 # export caption and on /paysupport. Never in the check-in or note flow, the
 # crisis path, guidance or reminders: nobody who has just written about a hard
-# moment should meet a sales pitch. tests/test_plus_gating.py holds that line.
+# moment should meet a sales pitch. tests/test_plus.py holds that line.
 # Wellness copy throughout — Plus buys features, not outcomes.
 
 PLUS_PERKS = (
