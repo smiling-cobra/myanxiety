@@ -88,6 +88,9 @@ PLUS_PURCHASED = 'plus_purchased'
 PLUS_REFUNDED = 'plus_refunded'
 PLUS_GRANTED = 'plus_granted'
 PAYWALL_SHOWN = 'paywall_shown'
+# A charge for an account that no longer exists, refunded automatically. Like
+# ACCOUNT_DELETED, recorded with no telegram_id: the account is gone.
+PLUS_ORPHAN_REFUNDED = 'plus_orphan_refunded'
 
 # Spend and failure
 LLM_BUDGET_EXCEEDED = 'llm_budget_exceeded'

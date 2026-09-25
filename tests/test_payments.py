@@ -142,6 +142,13 @@ class TestRecord:
             _record(svc)
             assert is_plus(_stored())
 
+    def test_a_payer_with_no_account_is_not_stored(self):
+        with _at():
+            result = _record(PaymentService())
+        assert result.orphan is True
+        assert PaymentRepository().find('c1') is None
+        assert _stored() is None
+
     def test_a_renewal_extends_plus(self):
         _save_user()
         svc = PaymentService()
@@ -295,6 +302,35 @@ class TestSuccessfulPaymentHandler:
         again.message.reply_text.assert_not_called()
 
 
+class TestOrphanPayment:
+    """A charge for an account that no longer exists is refunded, not kept."""
+
+    async def _pay(self, ctx):
+        update = _payment_update('c2', first=False, expires=NOW + timedelta(days=60))
+        with _at(), patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            await payments.handle_successful_payment(update, ctx)
+        return update, analytics
+
+    async def test_is_refunded_cancelled_and_not_stored(self):
+        ctx = _bot_context()
+        update, analytics = await self._pay(ctx)
+        ctx.bot.refund_star_payment.assert_awaited_once_with(user_id=USER_ID, telegram_payment_charge_id='c2')
+        ctx.bot.edit_user_star_subscription.assert_awaited_once_with(
+            user_id=USER_ID, telegram_payment_charge_id='c2', is_canceled=True
+        )
+        update.message.reply_text.assert_not_called()
+        assert PaymentRepository().find('c2') is None
+        assert analytics.track.call_args.args == (payments.analytics.PLUS_ORPHAN_REFUNDED,)
+
+    async def test_a_failed_refund_is_logged_for_a_manual_refund(self, caplog):
+        ctx = _bot_context()
+        ctx.bot.refund_star_payment.side_effect = BadRequest('nope')
+        _, analytics = await self._pay(ctx)
+        assert 'refund it by hand' in caplog.text
+        assert 'c2' in caplog.text
+        analytics.track.assert_not_called()
+
+
 class TestRegistration:
     def test_payment_updates_are_handled_outside_the_conversation(self):
         app = MagicMock()
@@ -436,6 +472,25 @@ class TestDeleteCancelsTheSubscription:
             ctx.bot.edit_user_star_subscription.side_effect = BadRequest('nope')
             _, update = await self._delete(ctx)
         assert 'My Stars' in update.message.reply_text.call_args.args[0]
+
+    async def test_a_renewal_after_a_failed_cancel_is_refunded(self):
+        """The path that makes a non-blocking cancel safe: the next charge is caught."""
+        _save_user()
+        with _at():
+            _record(PaymentService())
+            ctx = _bot_context()
+            ctx.bot.edit_user_star_subscription.side_effect = BadRequest('nope')
+            await self._delete(ctx)
+            renewal_ctx = _bot_context()
+            renewal = _payment_update('c2', first=False, expires=NOW + timedelta(days=60))
+            with patch('bot.handlers.journal.deps.analytics_svc'):
+                await payments.handle_successful_payment(renewal, renewal_ctx)
+        renewal_ctx.bot.refund_star_payment.assert_awaited_once_with(
+            user_id=USER_ID, telegram_payment_charge_id='c2'
+        )
+        assert _stored() is None
+        from db.db import payments_collection
+        assert payments_collection().count_documents({'telegram_id': USER_ID}) == 0
 
     async def test_no_subscription_means_no_bot_api_call(self):
         _save_user()

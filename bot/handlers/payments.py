@@ -93,10 +93,11 @@ async def handle_successful_payment(update: Update, context: ContextTypes.DEFAUL
     """
     payment = update.message.successful_payment
     telegram_id = update.effective_user.id
+    charge_id = payment.telegram_payment_charge_id
     result = await asyncio.to_thread(
         deps.payment_svc.record,
         telegram_id,
-        charge_id=payment.telegram_payment_charge_id,
+        charge_id=charge_id,
         provider_charge_id=payment.provider_payment_charge_id,
         amount=payment.total_amount,
         currency=payment.currency,
@@ -105,8 +106,11 @@ async def handle_successful_payment(update: Update, context: ContextTypes.DEFAUL
         is_first_recurring=bool(payment.is_first_recurring),
         expires_at=payment.subscription_expiration_date,
     )
+    if result.orphan:
+        await _refund_orphan(context, telegram_id, charge_id)
+        return
     if not result.new:
-        logger.info('Payment %s for user %s was already recorded.', payment.telegram_payment_charge_id, telegram_id)
+        logger.info('Payment %s for user %s was already recorded.', charge_id, telegram_id)
         return
 
     await asyncio.to_thread(
@@ -122,6 +126,23 @@ async def handle_successful_payment(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(
             PLUS_WELCOME.format(date=_date_label(result.plus_until)), parse_mode='Markdown'
         )
+
+
+async def _refund_orphan(context: ContextTypes.DEFAULT_TYPE, telegram_id: int, charge_id: str) -> None:
+    """Give back a charge for an account that no longer exists, and stop the renewals.
+
+    Nothing is sent to the user: they deleted their account, and Telegram shows
+    the refund itself. A failure is logged with the charge id so it can be
+    refunded by hand; there is no ledger row to find it by.
+    """
+    await cancel_subscription(context, telegram_id, charge_id)
+    try:
+        await context.bot.refund_star_payment(user_id=telegram_id, telegram_payment_charge_id=charge_id)
+    except TelegramError:
+        logger.exception('Could not refund charge %s for deleted user %s — refund it by hand.', charge_id, telegram_id)
+        return
+    logger.warning('Refunded charge %s from user %s, who has no account.', charge_id, telegram_id)
+    await asyncio.to_thread(deps.analytics_svc.track, analytics.PLUS_ORPHAN_REFUNDED)
 
 
 def _is_admin(update: Update) -> bool:

@@ -40,7 +40,8 @@ REJECT_NO_ACCOUNT = 'no_account'
 class PaymentResult:
     new: bool               # False for a redelivered update already in the ledger
     renewal: bool           # an automatic renewal, not a purchase the user just made
-    plus_until: datetime
+    plus_until: datetime | None
+    orphan: bool = False    # the payer has no account: nothing stored, refund it
 
 
 class PaymentService:
@@ -88,8 +89,15 @@ class PaymentService:
         script, or an update redelivered after a hard crash — repair a crash
         between the insert and the extension. A refunded
         charge is never extended again: a replay must not undo a refund.
+
+        A payer with no account gets nothing written, not even a ledger row: the
+        row would hold the id of someone who asked to be forgotten, and no later
+        /delete could find it. This is how a renewal lands after a /delete that
+        couldn't cancel the subscription. The caller refunds it.
         """
         now = time_utils.now()
+        if self._users.find(telegram_id) is None:
+            return PaymentResult(new=False, renewal=False, plus_until=None, orphan=True)
         until = time_utils.as_utc(expires_at) if expires_at else now + SUBSCRIPTION_PERIOD
         new = self._payments.record({
             'telegram_id': telegram_id,
