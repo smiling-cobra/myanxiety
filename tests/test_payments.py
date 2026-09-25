@@ -302,6 +302,21 @@ class TestSuccessfulPaymentHandler:
         again.message.reply_text.assert_not_called()
 
 
+class TestUnrecordedPayment:
+    """Telegram never redelivers the update, so a failed record must not vanish silently."""
+
+    async def test_the_user_is_told_and_the_charge_is_logged(self, caplog):
+        _save_user()
+        update = _payment_update('c9')
+        with patch('bot.handlers.journal.deps.payment_svc') as svc, \
+                patch('bot.handlers.journal.deps.analytics_svc') as analytics:
+            svc.record.side_effect = Exception('mongo down')
+            await payments.handle_successful_payment(update, make_context())
+        assert update.message.reply_text.call_args.args[0] == strings.PLUS_PAYMENT_UNRECORDED
+        assert 'PLUS_UNRECORDED charge=c9 user=12345' in caplog.text
+        assert analytics.track.call_args.args == (payments.analytics.PLUS_RECORD_FAILED, USER_ID)
+
+
 class TestOrphanPayment:
     """A charge for an account that no longer exists is refunded, not kept."""
 

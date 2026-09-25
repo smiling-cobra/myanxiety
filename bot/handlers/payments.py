@@ -43,6 +43,7 @@ from messages.strings import (
     ADMIN_REFUND_USAGE,
     PLUS_CHECKOUT_NO_ACCOUNT,
     PLUS_CHECKOUT_REFUSED,
+    PLUS_PAYMENT_UNRECORDED,
     PLUS_WELCOME,
 )
 from services import analytics_service as analytics
@@ -89,26 +90,36 @@ async def handle_pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Record the payment and extend Plus. The entitled user is always the payer.
 
-    Deliberately not wrapped in a catch-all: if recording fails, the global
-    error handler logs it and apologises, and the ledger can be reconciled
-    against Telegram's own transaction list. Swallowing it here would hide a
-    paid-for Plus that never arrived.
+    **This update is delivered once.** PTB marks every fetched update read,
+    whether or not its handler succeeds, so a failure here is not retried by
+    Telegram: the user has paid, and nothing will arrive again to say so. A
+    failed record is therefore logged under a fixed marker with the charge id,
+    the user is told the payment is safe, and `scripts/reconcile_payments.py`
+    replays Telegram's own transaction list into the ledger.
     """
     payment = update.message.successful_payment
     telegram_id = update.effective_user.id
     charge_id = payment.telegram_payment_charge_id
-    result = await asyncio.to_thread(
-        deps.payment_svc.record,
-        telegram_id,
-        charge_id=charge_id,
-        provider_charge_id=payment.provider_payment_charge_id,
-        amount=payment.total_amount,
-        currency=payment.currency,
-        payload=payment.invoice_payload,
-        is_recurring=bool(payment.is_recurring),
-        is_first_recurring=bool(payment.is_first_recurring),
-        expires_at=payment.subscription_expiration_date,
-    )
+    try:
+        result = await asyncio.to_thread(
+            deps.payment_svc.record,
+            telegram_id,
+            charge_id=charge_id,
+            provider_charge_id=payment.provider_payment_charge_id,
+            amount=payment.total_amount,
+            currency=payment.currency,
+            payload=payment.invoice_payload,
+            is_recurring=bool(payment.is_recurring),
+            is_first_recurring=bool(payment.is_first_recurring),
+            expires_at=payment.subscription_expiration_date,
+        )
+    except Exception:
+        logger.exception(
+            'PLUS_UNRECORDED charge=%s user=%s — run scripts.reconcile_payments.', charge_id, telegram_id
+        )
+        await asyncio.to_thread(deps.analytics_svc.track, analytics.PLUS_RECORD_FAILED, telegram_id)
+        await update.message.reply_text(PLUS_PAYMENT_UNRECORDED)
+        return
     if result.orphan:
         await _refund_orphan(context, telegram_id, charge_id)
         return

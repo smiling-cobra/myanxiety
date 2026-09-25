@@ -397,6 +397,11 @@ PLUS_WELCOME = (
     "time in Telegram → Settings → My Stars."
 )
 
+PLUS_PAYMENT_UNRECORDED = (
+    "Your payment went through, thank you — but I couldn't switch Plus on just now. "
+    "It will be sorted out within a day. If it isn't, write to /paysupport and it will be put right."
+)
+
 PLUS_CHECKOUT_REFUSED = "This payment couldn't be completed. Please open /plus and try again."
 
 PLUS_CHECKOUT_NO_ACCOUNT = "Please finish setting up your journal with /start before subscribing."
