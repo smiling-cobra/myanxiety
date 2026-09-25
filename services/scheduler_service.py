@@ -132,7 +132,12 @@ class SchedulerService:
                 if self._reminder_still_due(user, today):
                     await self._send_reminder(context, user, today)
             else:
-                await self._send_weekly_summary(context, user, today)
+                # The same fresh read, for the same reasons, plus one of its own:
+                # Plus can lapse between the tick and this job, and the summary
+                # is the one job that spends an LLM call.
+                user = await asyncio.to_thread(self._user_svc.get, telegram_id)
+                if self._weekly_summary_still_due(user, today):
+                    await self._send_weekly_summary(context, user, today)
         except Exception:
             logger.exception('Failed to deliver %s to user %s.', kind, telegram_id)
         finally:
@@ -299,6 +304,18 @@ class SchedulerService:
             and now_local.date().isoformat() == today
             and self._in_due_window(now_local, user)
             and self._reminder_due(user, today)
+        )
+
+    def _weekly_summary_still_due(self, user: dict | None, today: str) -> bool:
+        """The tick's test for a weekly summary, repeated on a fresh read of the user."""
+        if not (user and user.get('onboarded')):
+            return False
+        now_local = self._local_now(user)
+        return (
+            now_local is not None
+            and now_local.date().isoformat() == today
+            and self._in_due_window(now_local, user)
+            and self._weekly_summary_due(user, today)
         )
 
     def _reminders_paused(self, user: dict, today: str) -> bool:
