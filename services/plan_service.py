@@ -59,15 +59,16 @@ class PlanService:
 
         A renewal that arrives late, a trial granted to a subscriber, or a
         duplicated payment update must never shorten what someone already has.
-        Uses the non-upserting update: a payment for a deleted account must not
+        The comparison happens inside one conditional update, not on a read made
+        beforehand: the reconcile script can run while the bot is handling a
+        renewal for the same user, and a stale read would let the shorter end
+        land last. Never upserts: a payment for a deleted account must not
         recreate it.
         """
         until = time_utils.as_utc(until)
-        current = plus_until(self._users.find(telegram_id))
-        if current is not None and current >= until:
-            return current
-        self._users.update(telegram_id, plus_until=until, plus_source=source)
-        return until
+        if self._users.extend_plus(telegram_id, until, source):
+            return until
+        return plus_until(self._users.find(telegram_id)) or until
 
     def set_until(self, telegram_id: int, until: datetime, source: str) -> None:
         """Set `plus_until` outright, shorter or longer. For a refund and the admin switch only."""

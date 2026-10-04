@@ -112,6 +112,23 @@ class TestPlanService:
         assert stored['plus_until'].replace(tzinfo=timezone.utc) == NOW + timedelta(days=60)
         assert stored['plus_source'] == SOURCE_ADMIN
 
+    def test_extend_never_shortens_on_a_stale_read(self):
+        # Another writer (a renewal racing the reconcile script) moved the end
+        # after this caller last looked; the comparison must happen in the write.
+        _save_user(plus_until=NOW + timedelta(days=60), plus_source=SOURCE_ADMIN)
+        svc = PlanService()
+        with _at(), patch.object(svc._users, 'find', return_value={'telegram_id': USER_ID}):
+            svc.extend(USER_ID, NOW + timedelta(days=30), SOURCE_SUBSCRIPTION)
+        stored = _stored()
+        assert stored['plus_until'].replace(tzinfo=timezone.utc) == NOW + timedelta(days=60)
+        assert stored['plus_source'] == SOURCE_ADMIN
+
+    def test_extend_returns_the_stored_end_when_it_is_later(self):
+        _save_user(plus_until=NOW + timedelta(days=60))
+        with _at():
+            stored = PlanService().extend(USER_ID, NOW + timedelta(days=30), SOURCE_SUBSCRIPTION)
+        assert stored == NOW + timedelta(days=60)
+
     def test_extend_does_not_recreate_a_deleted_account(self):
         with _at():
             PlanService().extend(USER_ID, NOW + timedelta(days=30), SOURCE_SUBSCRIPTION)
