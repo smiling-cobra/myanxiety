@@ -30,9 +30,11 @@ def _save_user(telegram_id=USER_ID):
     UserRepository().save({'telegram_id': telegram_id, 'name': 'Sam', 'onboarded': True})
 
 
-def _run(transactions, dry_run=False):
+def _run(transactions, dry_run=False, charge_ids=None):
+    if charge_ids is None:
+        charge_ids = [t.id for t in transactions]
     with patch('services.time_utils.now', return_value=NOW):
-        return reconcile(transactions, dry_run=dry_run)
+        return reconcile(transactions, charge_ids, dry_run=dry_run)
 
 
 def test_a_missing_payment_is_recorded_and_grants_plus():
@@ -82,6 +84,27 @@ def test_other_transactions_are_ignored():
     report = _run([_tx('x1', payload='something_else'), _tx('x2', kind='paid_media_payment'), fragment])
     assert report.seen == 0
     assert PaymentRepository().find('x1') is None
+
+
+def test_only_named_charges_are_recorded():
+    _save_user()
+    report = _run([_tx('c1'), _tx('c2')], charge_ids=['c2'])
+    assert (report.seen, report.recorded) == (1, 1)
+    assert PaymentRepository().find('c1') is None
+    assert PaymentRepository().find('c2') is not None
+
+
+def test_a_deleted_users_history_is_not_restored_after_they_sign_up_again():
+    """/delete erased c1; the same person onboards again and pays c2, which failed to record."""
+    _save_user()
+    _run([_tx('c1', date=NOW - timedelta(days=90)), _tx('c2')], charge_ids=['c2'])
+    assert PaymentRepository().find('c1') is None
+
+
+def test_a_named_charge_telegram_does_not_have_is_reported():
+    _save_user()
+    report = _run([_tx('c1')], charge_ids=['c1', 'typo'])
+    assert (report.seen, report.not_found) == (1, 1)
 
 
 def test_a_dry_run_reports_and_writes_nothing():

@@ -209,7 +209,8 @@ to every note, the AI weekly summary (the `/summary` pattern paragraph and the s
   `run_polling` asks for `Update.ALL_TYPES` so pre-checkout queries always arrive.
 - **A `successful_payment` update arrives once.** PTB marks fetched updates read whether or not the handler
   succeeds. A failed record is logged as `PLUS_UNRECORDED charge=… user=…`, the user is told their payment
-  is safe, and `scripts/reconcile_payments.py` replays `getStarTransactions` into the ledger.
+  is safe, and `scripts/reconcile_payments.py <charge_id> ...` replays those charges from `getStarTransactions`
+  into the ledger. It takes charge ids rather than scanning, so it can't write back rows `/delete` erased.
 - A charge for an account that no longer exists (a renewal after a `/delete` that couldn't cancel) is not
   stored: the handler cancels and refunds it. A refunded charge is never extended again, even on a replay.
   `/refund` marks the ledger straight after the refund and is safe to repeat, so a failed cancel is retried

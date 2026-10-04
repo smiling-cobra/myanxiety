@@ -95,7 +95,7 @@ async def handle_successful_payment(update: Update, context: ContextTypes.DEFAUL
     Telegram: the user has paid, and nothing will arrive again to say so. A
     failed record is therefore logged under a fixed marker with the charge id,
     the user is told the payment is safe, and `scripts/reconcile_payments.py`
-    replays Telegram's own transaction list into the ledger.
+    replays that charge from Telegram's own transaction list into the ledger.
     """
     payment = update.message.successful_payment
     telegram_id = update.effective_user.id
@@ -115,7 +115,8 @@ async def handle_successful_payment(update: Update, context: ContextTypes.DEFAUL
         )
     except Exception:
         logger.exception(
-            'PLUS_UNRECORDED charge=%s user=%s — run scripts.reconcile_payments.', charge_id, telegram_id
+            'PLUS_UNRECORDED charge=%s user=%s — run scripts.reconcile_payments %s.',
+            charge_id, telegram_id, charge_id,
         )
         await asyncio.to_thread(deps.analytics_svc.track, analytics.PLUS_RECORD_FAILED, telegram_id)
         await update.message.reply_text(PLUS_PAYMENT_UNRECORDED)

@@ -6,14 +6,19 @@ user has paid and the bot has no row and no Plus for them. The handler logs
 from Telegram's own record (`getStarTransactions`), which is the financial
 record of truth anyway:
 
-    fly ssh console -C "python -m scripts.reconcile_payments --dry-run"
-    fly ssh console -C "python -m scripts.reconcile_payments"
+    fly ssh console -C "python -m scripts.reconcile_payments --dry-run <charge_id> ..."
+    fly ssh console -C "python -m scripts.reconcile_payments <charge_id> ..."
 
-Only Plus invoice payments that are missing from the ledger are recorded, each
-through `PaymentService.record`, so Plus is extended exactly as the handler
-would have done it. Idempotent: a charge already in the ledger is left alone.
-A charge whose payer has no account is only counted — the payment handler
-already refunds those, and this script sends nothing and refunds nothing.
+Only the charges named on the command line are considered — the ids from the
+`PLUS_UNRECORDED` log lines. There is no scan of every transaction: /delete
+removes a user's ledger rows on purpose, and a user who deletes and later signs
+up again would have that erased history written back by a scan, which can't
+tell a lost payment from a deleted one. A named charge that is a Plus invoice
+payment missing from the ledger is recorded through `PaymentService.record`, so
+Plus is extended exactly as the handler would have done it. Idempotent: a charge
+already in the ledger is left alone. A charge whose payer has no account is only
+counted — the payment handler already refunds those, and this script sends
+nothing and refunds nothing.
 
 A charge refunded outside the bot (not via /refund) and never recorded would be
 recorded as paid. Refund it through /refund afterwards, which is safe to repeat.
@@ -40,7 +45,8 @@ _INVOICE_PAYMENT = 'invoice_payment'
 
 @dataclass
 class ReconcileReport:
-    seen: int = 0            # Plus payments in Telegram's list
+    seen: int = 0            # named charges that are Plus payments in Telegram's list
+    not_found: int = 0       # named charges with no Plus payment at Telegram
     recorded: int = 0        # missing from the ledger, now recorded (or would be, on a dry run)
     orphans: int = 0         # missing, but the payer has no account
 
@@ -77,17 +83,21 @@ def _period(source) -> timedelta | None:
     return timedelta(seconds=period)
 
 
-def reconcile(transactions, dry_run: bool = False) -> ReconcileReport:
-    """Record every Plus payment in `transactions` that the ledger lacks."""
+def reconcile(transactions, charge_ids, dry_run: bool = False) -> ReconcileReport:
+    """Record each charge in `charge_ids` that is a Plus payment in `transactions` and missing from the ledger."""
     from repositories.user_repo import UserRepository
     from services.payment_service import STARS_CURRENCY, SUBSCRIPTION_PERIOD, PaymentService
 
     payments, users = PaymentService(), UserRepository()
     report = ReconcileReport()
+    wanted = set(charge_ids)
     for transaction in transactions:
+        if transaction.id not in wanted:
+            continue
         source = _plus_payment(transaction)
         if source is None:
             continue
+        wanted.discard(transaction.id)
         report.seen += 1
         if payments.find(transaction.id) is not None:
             continue
@@ -116,29 +126,33 @@ def reconcile(transactions, dry_run: bool = False) -> ReconcileReport:
             is_first_recurring=False,
             expires_at=transaction.date + (period or SUBSCRIPTION_PERIOD),
         )
+    for charge_id in sorted(wanted):
+        report.not_found += 1
+        logger.warning('Charge %s is not a Plus payment at Telegram — nothing to do.', charge_id)
     return report
 
 
-async def _run(dry_run: bool) -> ReconcileReport:
+async def _run(charge_ids: list[str], dry_run: bool) -> ReconcileReport:
     from telegram import Bot
 
     async with Bot(os.environ['TELEGRAM_TOKEN']) as bot:
         transactions = await fetch_transactions(bot)
-    return await asyncio.to_thread(reconcile, transactions, dry_run)
+    return await asyncio.to_thread(reconcile, transactions, charge_ids, dry_run)
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
     load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('charge_ids', nargs='+', metavar='charge_id', help='from a PLUS_UNRECORDED log line')
     parser.add_argument('--dry-run', action='store_true', help='report missing payments without writing')
     args = parser.parse_args()
 
-    report = asyncio.run(_run(args.dry_run))
+    report = asyncio.run(_run(args.charge_ids, args.dry_run))
     verb = 'would be recorded' if args.dry_run else 'recorded'
     logger.info(
-        '%d Plus payment(s) at Telegram; %d missing and %s; %d from users with no account.',
-        report.seen, report.recorded, verb, report.orphans,
+        '%d named charge(s) found at Telegram, %d not found; %d missing and %s; %d from users with no account.',
+        report.seen, report.not_found, report.recorded, verb, report.orphans,
     )
 
 
