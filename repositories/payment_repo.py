@@ -45,6 +45,9 @@ class PaymentRepository:
             {'telegram_payment_charge_id': charge_id}, {'$set': {'refunded_at': when}}
         )
 
+    def delete(self, charge_id: str) -> None:
+        payments_collection().delete_one({'telegram_payment_charge_id': charge_id})
+
     def delete_for_user(self, telegram_id: int) -> int:
         return payments_collection().delete_many({'telegram_id': telegram_id}).deleted_count
 

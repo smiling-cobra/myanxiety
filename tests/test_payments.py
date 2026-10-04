@@ -149,6 +149,23 @@ class TestRecord:
         assert PaymentRepository().find('c1') is None
         assert _stored() is None
 
+    def test_an_account_deleted_during_the_insert_leaves_no_row(self):
+        """/delete runs between the account check and the insert (the reconcile script is its own process)."""
+        _save_user()
+        svc = PaymentService()
+        insert = svc._payments.record
+
+        def delete_then_insert(payment):
+            UserRepository().delete_for_user(USER_ID)
+            PaymentRepository().delete_for_user(USER_ID)
+            return insert(payment)
+
+        with _at(), patch.object(svc._payments, 'record', side_effect=delete_then_insert):
+            result = _record(svc)
+        assert result.orphan is True
+        assert PaymentRepository().find('c1') is None
+        assert _stored() is None
+
     def test_a_renewal_extends_plus(self):
         _save_user()
         svc = PaymentService()

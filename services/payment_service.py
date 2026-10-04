@@ -94,10 +94,17 @@ class PaymentService:
         row would hold the id of someone who asked to be forgotten, and no later
         /delete could find it. This is how a renewal lands after a /delete that
         couldn't cancel the subscription. The caller refunds it.
+
+        The account is checked again after the insert, because the reconcile
+        script runs in its own process and a /delete can land between the first
+        check and the insert. /delete removes `users` before `payments`, so
+        either this second check sees the account gone and removes the row, or
+        the deletion's `payments` step comes after the insert and removes it.
         """
         now = time_utils.now()
+        orphan = PaymentResult(new=False, renewal=False, plus_until=None, orphan=True)
         if self._users.find(telegram_id) is None:
-            return PaymentResult(new=False, renewal=False, plus_until=None, orphan=True)
+            return orphan
         until = time_utils.as_utc(expires_at) if expires_at else now + SUBSCRIPTION_PERIOD
         new = self._payments.record({
             'telegram_id': telegram_id,
@@ -112,6 +119,9 @@ class PaymentService:
             'created_at': now,
             'refunded_at': None,
         })
+        if new and self._users.find(telegram_id) is None:
+            self._payments.delete(charge_id)
+            return orphan
         if not new:
             stored = self._payments.find(charge_id)
             if stored is not None and stored.get('refunded_at') is not None:
