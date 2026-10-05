@@ -48,14 +48,34 @@ def test_a_missing_payment_is_recorded_and_grants_plus():
     assert UserRepository().find(USER_ID)['plus_until'].replace(tzinfo=timezone.utc) == NOW + timedelta(days=30)
 
 
-def test_a_recorded_payment_is_left_alone():
+def test_a_recorded_payment_is_replayed_without_a_second_row():
     _save_user()
     with patch('services.time_utils.now', return_value=NOW):
         PaymentService().record(
             USER_ID, charge_id='c1', provider_charge_id=None, amount=PLUS_PRICE_STARS, currency='XTR',
             payload=PLUS_PAYLOAD, is_recurring=True, is_first_recurring=True, expires_at=NOW + timedelta(days=30),
         )
-    assert _run([_tx()]).recorded == 0
+    report = _run([_tx()])
+    assert (report.recorded, report.replayed) == (0, 1)
+    assert PaymentRepository().find('c1') is not None
+    assert UserRepository().find(USER_ID)['plus_until'].replace(tzinfo=timezone.utc) == NOW + timedelta(days=30)
+
+
+def test_a_row_whose_extension_failed_gets_its_plus():
+    """The handler's insert succeeded and the extension after it raised: PLUS_UNRECORDED, row present, no Plus."""
+    _save_user()
+    PaymentRepository().record({'telegram_id': USER_ID, 'telegram_payment_charge_id': 'c1', 'refunded_at': None})
+    report = _run([_tx()])
+    assert report.replayed == 1
+    with patch('services.time_utils.now', return_value=NOW):
+        assert is_plus(UserRepository().find(USER_ID))
+
+
+def test_a_dry_run_replays_nothing():
+    _save_user()
+    PaymentRepository().record({'telegram_id': USER_ID, 'telegram_payment_charge_id': 'c1', 'refunded_at': None})
+    assert _run([_tx()], dry_run=True).replayed == 1
+    assert 'plus_until' not in UserRepository().find(USER_ID)
 
 
 def test_a_refunded_charge_in_the_ledger_is_not_restored():
@@ -67,7 +87,8 @@ def test_a_refunded_charge_in_the_ledger_is_not_restored():
             payload=PLUS_PAYLOAD, is_recurring=True, is_first_recurring=True, expires_at=NOW + timedelta(days=30),
         )
         svc.mark_refunded('c1')
-    _run([_tx()])
+    report = _run([_tx()])
+    assert (report.recorded, report.replayed) == (0, 0)
     with patch('services.time_utils.now', return_value=NOW):
         assert not is_plus(UserRepository().find(USER_ID))
 

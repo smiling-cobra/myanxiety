@@ -15,10 +15,13 @@ removes a user's ledger rows on purpose, and a user who deletes and later signs
 up again would have that erased history written back by a scan, which can't
 tell a lost payment from a deleted one. A named charge that is a Plus invoice
 payment missing from the ledger is recorded through `PaymentService.record`, so
-Plus is extended exactly as the handler would have done it. Idempotent: a charge
-already in the ledger is left alone. A charge whose payer has no account is only
-counted — the payment handler already refunds those, and this script sends
-nothing and refunds nothing.
+Plus is extended exactly as the handler would have done it. A charge already in
+the ledger and not refunded is replayed the same way: `PLUS_UNRECORDED` is also
+logged when the insert succeeded and the extension after it failed, and only a
+replay repairs that. Idempotent: `extend` never shortens, and a refunded charge
+is left alone. A charge whose payer has no account is only counted — the
+payment handler already refunds those, and this script sends nothing and
+refunds nothing.
 
 A charge refunded outside the bot (not via /refund) and never recorded would be
 recorded as paid. Refund it through /refund afterwards, which is safe to repeat.
@@ -48,6 +51,7 @@ class ReconcileReport:
     seen: int = 0            # named charges that are Plus payments in Telegram's list
     not_found: int = 0       # named charges with no Plus payment at Telegram
     recorded: int = 0        # missing from the ledger, now recorded (or would be, on a dry run)
+    replayed: int = 0        # in the ledger, unrefunded, its extension replayed (or would be)
     orphans: int = 0         # missing, but the payer has no account
 
 
@@ -83,6 +87,15 @@ def _period(source) -> timedelta | None:
     return timedelta(seconds=period)
 
 
+def _count(report: ReconcileReport, charge_id: str, telegram_id: int, in_ledger: bool) -> None:
+    if in_ledger:
+        report.replayed += 1
+        logger.info('Charge %s from user %s is in the ledger; replaying it.', charge_id, telegram_id)
+    else:
+        report.recorded += 1
+        logger.info('Charge %s from user %s is missing from the ledger.', charge_id, telegram_id)
+
+
 def reconcile(transactions, charge_ids, dry_run: bool = False) -> ReconcileReport:
     """Record each charge in `charge_ids` that is a Plus payment in `transactions` and missing from the ledger."""
     from repositories.user_repo import UserRepository
@@ -99,7 +112,8 @@ def reconcile(transactions, charge_ids, dry_run: bool = False) -> ReconcileRepor
             continue
         wanted.discard(transaction.id)
         report.seen += 1
-        if payments.find(transaction.id) is not None:
+        stored = payments.find(transaction.id)
+        if stored is not None and stored.get('refunded_at') is not None:
             continue
 
         telegram_id = source.user.id
@@ -108,8 +122,7 @@ def reconcile(transactions, charge_ids, dry_run: bool = False) -> ReconcileRepor
             logger.warning('Charge %s from user %s has no account — not recorded.', transaction.id, telegram_id)
             continue
 
-        report.recorded += 1
-        logger.info('Charge %s from user %s is missing from the ledger.', transaction.id, telegram_id)
+        _count(report, transaction.id, telegram_id, in_ledger=stored is not None)
         if dry_run:
             continue
         period = _period(source)
@@ -126,9 +139,9 @@ def reconcile(transactions, charge_ids, dry_run: bool = False) -> ReconcileRepor
             is_first_recurring=False,
             expires_at=transaction.date + (period or SUBSCRIPTION_PERIOD),
         )
-    for charge_id in sorted(wanted):
-        report.not_found += 1
-        logger.warning('Charge %s is not a Plus payment at Telegram — nothing to do.', charge_id)
+    report.not_found = len(wanted)
+    if wanted:
+        logger.warning('Not Plus payments at Telegram, nothing to do: %s', ', '.join(sorted(wanted)))
     return report
 
 
@@ -151,8 +164,9 @@ def main() -> None:
     report = asyncio.run(_run(args.charge_ids, args.dry_run))
     verb = 'would be recorded' if args.dry_run else 'recorded'
     logger.info(
-        '%d named charge(s) found at Telegram, %d not found; %d missing and %s; %d from users with no account.',
-        report.seen, report.not_found, report.recorded, verb, report.orphans,
+        '%d named charge(s) found at Telegram, %d not found; %d missing and %s; '
+        '%d already recorded and replayed; %d from users with no account.',
+        report.seen, report.not_found, report.recorded, verb, report.replayed, report.orphans,
     )
 
 
