@@ -24,5 +24,14 @@ class UserRepository:
             {'$set': kwargs}
         )
 
+    def extend_plus(self, telegram_id: int, until, source: str) -> bool:
+        """Move `plus_until` to `until` only if that is later. One conditional update, so a
+        concurrent writer can never be overwritten with an earlier end. Never creates a user."""
+        result = users_collection().update_one(
+            {'telegram_id': telegram_id, '$or': [{'plus_until': None}, {'plus_until': {'$lt': until}}]},
+            {'$set': {'plus_until': until, 'plus_source': source}},
+        )
+        return result.modified_count == 1
+
     def delete_for_user(self, telegram_id: int) -> int:
         return users_collection().delete_many({'telegram_id': telegram_id}).deleted_count

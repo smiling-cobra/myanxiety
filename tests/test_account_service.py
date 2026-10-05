@@ -24,6 +24,7 @@ from db.db import notifications_collection
 from services.account_service import AccountService, DeletionIncomplete
 from services.analytics_service import AnalyticsService
 from services.journal_service import JournalService
+from services.payment_service import PLUS_PAYLOAD, PLUS_PRICE_STARS, PaymentService
 from services.usage_service import UsageService
 from services.user_service import UserService
 
@@ -48,6 +49,10 @@ async def _seed(telegram_id: int) -> None:
     UsageService().consume_llm(telegram_id, 2)
     AnalyticsService().track('check_in_completed', telegram_id, mood_score=3)
     notifications_collection().insert_one({'telegram_id': telegram_id, 'kind': 'legacy'})
+    PaymentService().record(
+        telegram_id, charge_id=f'charge-{telegram_id}', provider_charge_id=None, amount=PLUS_PRICE_STARS,
+        currency='XTR', payload=PLUS_PAYLOAD, is_recurring=True, is_first_recurring=True, expires_at=None,
+    )
 
     persistence = MongoPersistence()
     await persistence.update_user_data(telegram_id, {'name': 'Sam', 'mood_score': 3})

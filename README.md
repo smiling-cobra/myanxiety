@@ -22,6 +22,11 @@ ANTHROPIC_MODEL=claude-3-5-sonnet-latest
 
 `ANTHROPIC_MODEL` is optional. If not set, the app falls back to `claude-3-5-sonnet-latest`.
 
+Two more optional variables support Plus, the paid tier:
+
+- `ADMIN_TELEGRAM_IDS`: comma-separated Telegram ids allowed `/admin_plus` (switch your own Plus on or off, for testing) and `/refund <charge_id>`. Unset means nobody.
+- `SUPPORT_CONTACT`: the @username or email that `/paysupport` gives for payment problems.
+
 For Fly.io deployments, set or update the model with:
 
 ```bash

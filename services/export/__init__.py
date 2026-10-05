@@ -19,10 +19,10 @@ Two properties are deliberate rather than rough:
 Tags are read through `services.tags`, so the themes line reflects the current
 vocabulary however old the entries are.
 
-`ExportService`, `Export` and `EXPORT_DAYS` are the public surface. `service.py`
+`ExportService`, `Export`, `EXPORT_DAYS` (free) and `PLUS_EXPORT_DAYS` are the public surface. `service.py`
 loads what is stored and packages the file, `digest.py` works out what the file
 says, and `markdown.py` lays it out.
 """
-from services.export.service import EXPORT_DAYS, Export, ExportService
+from services.export.service import EXPORT_DAYS, PLUS_EXPORT_DAYS, Export, ExportService
 
-__all__ = ['EXPORT_DAYS', 'Export', 'ExportService']
+__all__ = ['EXPORT_DAYS', 'PLUS_EXPORT_DAYS', 'Export', 'ExportService']

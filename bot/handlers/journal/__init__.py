@@ -21,6 +21,7 @@ machine and `register()`. Each responsibility lives in its own submodule:
     export.py       /export — the therapist-shareable file, and /flag for it
     account.py      /delete — confirmation and the full fan-out
     settings.py     /settings — reminder time, pause, early resume
+    plus.py         /plus — the paid tier's offer and status (payments: bot/handlers/payments.py)
 """
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 
@@ -28,6 +29,7 @@ from bot.handlers.journal.account import handle_delete_confirmation, request_del
 from bot.handlers.journal.checkin import handle_entry_text, handle_guidance_offer, handle_mood
 from bot.handlers.journal.export import send_export, toggle_flag
 from bot.handlers.journal.menu import cancel, handle_main_menu, recover_state
+from bot.handlers.journal.plus import show_plus
 from bot.handlers.journal.settings import (
     handle_pause_length,
     handle_settings_choice,
@@ -92,6 +94,7 @@ __all__ = [
     'handle_settings_choice',
     'handle_settings_time',
     'handle_pause_length',
+    'show_plus',
     'cancel',
     'recover_state',
     'register',
@@ -110,6 +113,7 @@ def register(application: Application) -> None:
         CommandHandler('flag', toggle_flag),
         CommandHandler('delete', request_delete),
         CommandHandler('settings', show_settings),
+        CommandHandler('plus', show_plus),
     ]
     handler = ConversationHandler(
         entry_points=[

@@ -29,3 +29,21 @@ def require_config(environ: Mapping[str, str] = os.environ) -> None:
             'Missing required configuration: %s. Set them in .env or the deploy secrets.', ', '.join(missing)
         )
         raise SystemExit(1)
+
+
+def admin_ids(environ: Mapping[str, str] = os.environ) -> frozenset[int]:
+    """The Telegram ids in `ADMIN_TELEGRAM_IDS` (comma-separated), allowed the admin commands.
+
+    Optional: unset means nobody. A malformed id is skipped with a warning rather
+    than failing boot, because nothing a user relies on depends on it.
+    """
+    ids = set()
+    for part in (environ.get('ADMIN_TELEGRAM_IDS') or '').split(','):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.add(int(part))
+        except ValueError:
+            logger.warning('Ignoring malformed id %r in ADMIN_TELEGRAM_IDS.', part)
+    return frozenset(ids)

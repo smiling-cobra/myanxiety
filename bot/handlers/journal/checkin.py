@@ -18,6 +18,11 @@ same mood, text and safety path, acknowledged with a fixed line instead of a
 reflection. There is no limit on notes: the moment someone most needs to write
 is often the second time that day, and the crisis lexicon cannot read text that
 was never written.
+
+With Plus, a note gets a written reply too. That is the only difference Plus
+makes here, and nothing in this flow ever mentions Plus: someone who has just
+written about a hard moment must not meet an offer (see `PLUS_PERKS` in
+`messages/strings.py`).
 """
 import asyncio
 import logging
@@ -47,6 +52,7 @@ from messages.strings import (
     GUIDANCE_OFFER_VERY_LOW,
     GUIDANCE_STATIC_FALLBACK,
     MOOD_LOST,
+    NOTE_REPLY,
     NOTE_SAVED,
     WRONG_MOOD,
 )
@@ -126,8 +132,10 @@ async def _send_crisis_resources(update: Update, telegram_id: int, triggers: lis
 async def _completion_message(
     telegram_id: int, name: str, first_of_day: bool, llm_response: str | None, streak: int
 ) -> str:
-    """The reply to a saved entry: a note's acknowledgement, or the check-in with or without a reflection."""
+    """The reply to a saved entry: a note's acknowledgement (with a Plus reply), or the check-in."""
     if not first_of_day:
+        if llm_response is not None:
+            return NOTE_REPLY.format(name=escape_md(name), llm_response=escape_md(llm_response))
         return NOTE_SAVED.format(name=escape_md(name))
     if llm_response is None:
         await asyncio.to_thread(
@@ -160,14 +168,18 @@ async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await _send_crisis_resources(update, telegram_id, triggers, categories)
 
     llm_allowed = await asyncio.to_thread(deps.usage_svc.consume_llm, telegram_id, _CHECK_IN_LLM_CALLS)
+    # Never raises: a failed read answers "free", which costs a Plus user one reply.
+    plus = await asyncio.to_thread(deps.plan_svc.is_plus, telegram_id)
 
     try:
         tags = await asyncio.to_thread(deps.llm_svc.extract_tags, text) if llm_allowed else []
         first_of_day = await asyncio.to_thread(deps.journal_svc.save_entry, telegram_id, mood_score, text, tags)
         stats = await asyncio.to_thread(deps.journal_svc.get_stats, telegram_id)
+        # The daily check-in always gets a reply; with Plus, so does a note.
+        reply_due = first_of_day or plus
         llm_response = (
             await asyncio.to_thread(deps.llm_svc.get_empathetic_response, mood_score, text)
-            if llm_allowed and first_of_day else None
+            if llm_allowed and reply_due else None
         )
     except Exception:
         logger.exception('Check-in failed for user %s', telegram_id)
@@ -184,8 +196,8 @@ async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text(ERROR_GENERIC, reply_markup=get_main_menu_keyboard())
         return MAIN_MENU
 
-    if not first_of_day and llm_allowed:
-        # A note was never going to get a reply, so its reserved call is handed back.
+    if llm_allowed and not reply_due:
+        # A free user's note was never going to get a reply, so its reserved call is handed back.
         await asyncio.to_thread(deps.usage_svc.refund, telegram_id, 1)
 
     body = await _completion_message(telegram_id, name, first_of_day, llm_response, stats['streak'])
@@ -201,6 +213,7 @@ async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         tag_count=len(tags),
         streak=stats['streak'],
         llm=llm_response is not None,
+        plus=plus,
     )
 
     # A content match opens the guidance offer even when the rating is high,

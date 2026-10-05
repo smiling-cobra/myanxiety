@@ -61,6 +61,12 @@ def usage_collection():
     return get_collection('usage')
 
 
+# Telegram Stars payments for Plus: charge ids, amounts and dates. User-linked,
+# so it is in the /delete fan-out.
+def payments_collection():
+    return get_collection('payments')
+
+
 # python-telegram-bot persistence. Framework state, not domain data — kept in
 # their own collections so a /delete fan-out can see them for what they are.
 def conversations_collection():

@@ -23,8 +23,9 @@ from config import require_config
 # otherwise surface as a traceback from whichever one reads it first.
 require_config()
 
+from telegram import Update
 from telegram.ext import Application
-from bot.handlers import commands, errors, journal
+from bot.handlers import commands, errors, journal, payments
 from bot.persistence import MongoPersistence
 from db.db import get_db
 from db.indexes import ensure_indexes
@@ -49,6 +50,7 @@ def main() -> None:
 
     commands.register(application)
     journal.register(application)
+    payments.register(application)
     errors.register(application)
 
     SchedulerService().start(application.job_queue)
@@ -57,7 +59,10 @@ def main() -> None:
 
     # Replaces start_polling() + idle(): run_polling owns the event loop and
     # handles initialisation and graceful shutdown itself.
-    application.run_polling()
+    # Explicit, so pre-checkout queries are always delivered: an allowed_updates
+    # list left over from an earlier deploy would otherwise silently drop them,
+    # and every Plus payment would time out.
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == '__main__':

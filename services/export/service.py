@@ -10,8 +10,12 @@ from services.export.markdown import render_markdown
 from services.journal_service import JournalService
 
 # Roughly a month: long enough to cover the gap between fortnightly sessions
-# with room to spare, short enough to read in the waiting room.
+# with room to spare, short enough to read in the waiting room. This window is
+# free for good; paywalling a user's own recent data is ruled out.
 EXPORT_DAYS = 30
+
+# Plus: a quarter, for a review with a therapist or a longer look back.
+PLUS_EXPORT_DAYS = 90
 
 
 @dataclass(frozen=True)
@@ -27,17 +31,17 @@ class ExportService:
         self._journal = JournalService()
         self._users = UserRepository()
 
-    def build(self, telegram_id: int) -> Export | None:
-        """The export for the last `EXPORT_DAYS` local days, or None if there is nothing in it."""
+    def build(self, telegram_id: int, days: int = EXPORT_DAYS) -> Export | None:
+        """The export for the last `days` local days, or None if there is nothing in it."""
         user = self._users.find(telegram_id) or {}
         timezone_name = user.get('timezone')
-        entries = self._journal.get_entries_for_days(telegram_id, EXPORT_DAYS, timezone_name)
+        entries = self._journal.get_entries_for_days(telegram_id, days, timezone_name)
         if not entries:
             return None
 
         tz = time_utils.resolve_timezone(timezone_name, telegram_id)
         today = time_utils.now().astimezone(tz).date()
-        digest = build_digest(user.get('name'), entries, tz, today, EXPORT_DAYS)
+        digest = build_digest(user.get('name'), entries, tz, today, days)
         return Export(
             filename=f'journal-{today.isoformat()}.md',
             content=render_markdown(digest).encode('utf-8'),
