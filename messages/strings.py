@@ -23,8 +23,9 @@ PRIVACY_NOTICE = (
     "• */export* sends you a file of your last 30 days — a summary, then everything you wrote "
     "in full — in this chat. It's made for sharing with a therapist, but nobody sees it unless "
     "you send it to them yourself.\n"
-    "• If you subscribe to Plus, Telegram processes the payment in Stars. I keep only the "
-    "payment reference, amount and dates.\n"
+    "• If you subscribe to Plus, Telegram processes the payment in Stars. For each payment I "
+    "keep your Telegram ID, Telegram's payment references, the plan, the amount and currency, "
+    "whether it renews, and when it was paid, runs out or was refunded — nothing else.\n"
     "• */delete* permanently removes everything this bot stores about you, in one step.\n"
     "• I'm a journalling tool. I'm not a therapist, a diagnosis, or a crisis service.\n\n"
     "Type */privacy* any time to read this again."
@@ -420,8 +421,9 @@ PAYSUPPORT_MESSAGE = (
     "• *Refunds*: if something went wrong with a payment, write to us within 14 days and "
     "we'll refund it in Stars.\n"
     "• *Contact*: {contact} — describe the problem and include the date of the payment.\n\n"
-    "Payments are processed by Telegram. We store only the payment reference, amount and "
-    "dates — never card details."
+    "Payments are processed by Telegram. For each payment we store your Telegram ID, the "
+    "payment references, the plan, the amount and currency, whether it renews, and its dates "
+    "— never card details. /delete removes them."
 )
 
 ADMIN_PLUS_ON = "Admin: Plus on until {date}."
