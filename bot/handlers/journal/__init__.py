@@ -22,12 +22,14 @@ machine and `register()`. Each responsibility lives in its own submodule:
     account.py      /delete — confirmation and the full fan-out
     settings.py     /settings — reminder time, pause, early resume
     plus.py         /plus — the paid tier's offer and status (payments: bot/handlers/payments.py)
+    feedback.py     /feedback — one message to the admins, stored and forwarded
 """
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 
 from bot.handlers.journal.account import handle_delete_confirmation, request_delete
 from bot.handlers.journal.checkin import handle_entry_text, handle_guidance_offer, handle_mood
 from bot.handlers.journal.export import send_export, toggle_flag
+from bot.handlers.journal.feedback import handle_feedback_text, request_feedback
 from bot.handlers.journal.menu import cancel, handle_main_menu, recover_state
 from bot.handlers.journal.plus import show_plus
 from bot.handlers.journal.settings import (
@@ -49,6 +51,7 @@ from bot.handlers.journal.states import (
     CHECK_IN_MOOD,
     CHECK_IN_TEXT,
     DELETE_CONFIRM,
+    FEEDBACK_TEXT,
     MAIN_MENU,
     ONBOARDING_NAME,
     ONBOARDING_THERAPY,
@@ -73,6 +76,7 @@ __all__ = [
     'SETTINGS_MENU',
     'SETTINGS_TIME',
     'SETTINGS_PAUSE_LENGTH',
+    'FEEDBACK_TEXT',
     'start',
     'handle_name',
     'handle_timezone',
@@ -95,6 +99,8 @@ __all__ = [
     'handle_settings_time',
     'handle_pause_length',
     'show_plus',
+    'request_feedback',
+    'handle_feedback_text',
     'cancel',
     'recover_state',
     'register',
@@ -114,6 +120,7 @@ def register(application: Application) -> None:
         CommandHandler('delete', request_delete),
         CommandHandler('settings', show_settings),
         CommandHandler('plus', show_plus),
+        CommandHandler('feedback', request_feedback),
     ]
     handler = ConversationHandler(
         entry_points=[
@@ -138,6 +145,7 @@ def register(application: Application) -> None:
             SETTINGS_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_settings_choice)],
             SETTINGS_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_settings_time)],
             SETTINGS_PAUSE_LENGTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pause_length)],
+            FEEDBACK_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_feedback_text)],
         },
         # Commands reach an active conversation through the fallbacks, which are
         # consulted only after the current state's own handlers decline.

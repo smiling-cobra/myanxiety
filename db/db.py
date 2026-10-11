@@ -67,6 +67,12 @@ def payments_collection():
     return get_collection('payments')
 
 
+# What users send through /feedback: their own words, stored outside `entries`.
+# User-linked, so it is in the /delete fan-out.
+def feedback_collection():
+    return get_collection('feedback')
+
+
 # python-telegram-bot persistence. Framework state, not domain data — kept in
 # their own collections so a /delete fan-out can see them for what they are.
 def conversations_collection():

@@ -80,6 +80,13 @@ REMINDERS_RESUMED = 'reminders_resumed'
 # re-links them. Its props are counts, which join to nothing.
 ACCOUNT_DELETED = 'account_deleted'
 
+# Feedback. `source` is prompt, command or settings; `text_length` is the only
+# trace of what was written. `feedback_prompted` is the one-time ask after
+# `FEEDBACK_ASK_AFTER` entries, so its conversion can be read against
+# `feedback_sent` with source=prompt.
+FEEDBACK_SENT = 'feedback_sent'
+FEEDBACK_PROMPTED = 'feedback_prompted'
+
 # Plus. `status` is free, trial or plus; `reason` and `surface` are closed
 # vocabularies from services/payment_service.py and the call sites.
 PLUS_VIEWED = 'plus_viewed'

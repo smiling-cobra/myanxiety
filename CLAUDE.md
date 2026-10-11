@@ -63,6 +63,13 @@ This keeps the loop responsive; it does not make updates concurrent. Updates are
 `/export` and `/flag` (`export.py`) and `/plus` (`plus.py`, also a button in the Settings menu) are single-step
 commands that return to `MAIN_MENU`.
 
+- `FEEDBACK_TEXT`: `/feedback` or the Send feedback button in Settings — `feedback.py`. One message of up to 2000
+  characters is stored in `feedback`, forwarded as plain text to each id in `ADMIN_TELEGRAM_IDS` (a failed forward is
+  only logged), and acknowledged. It runs through `detect_crisis` first, like an entry. At most 5 per local day
+  (`FeedbackService`). Once, after `FEEDBACK_ASK_AFTER` (7) entries, an ordinary daily check-in is followed by a
+  short ask (`FEEDBACK_ASK`): never after a note, a mood at or below `LOW_MOOD_THRESHOLD`, or crisis resources.
+  `feedback_prompted_at` on the user is written before it is sent, through the non-upserting `update`.
+
 **Routing.** Every command is listed both as an entry point and as a fallback, and `allow_reentry` is
 off. Do not turn it back on. Re-entry checks the entry points *before* the current state's handlers,
 and the last entry point, `recover_state`, matches any text. With re-entry on, every mood rating,
@@ -74,20 +81,20 @@ journal entry, and onboarding answer went to recovery. `tests/test_routing.py` d
 thresholds), `deps.py` (service singletons, reached as `deps.llm_svc` etc.), `errors.py`
 (`@service_errors`, the shared "fall back to main menu" decorator), `timezones.py` (IANA lookup),
 `main_menu.py` (the per-user menu keyboard), the read-only `views.py` (history, stats, weekly summary), `export.py` (`/export`, `/flag`),
-`account.py` (`/delete`) and `settings.py` (`/settings`).
+`account.py` (`/delete`), `settings.py` (`/settings`) and `feedback.py` (`/feedback`).
 
 **Layers**:
 | Directory | Role |
 |---|---|
 | `bot/handlers/` | Telegram command and conversation handlers |
 | `bot/keyboards.py` | ReplyKeyboard definitions (main menu, mood 1–10) |
-| `services/` | Business logic — `LlmService`, `UserService`, `JournalService`, `SchedulerService`, `AnalyticsService`, `UsageService`, `ExportService`, `AccountService`, `PlanService`, `PaymentService` |
+| `services/` | Business logic — `LlmService`, `UserService`, `JournalService`, `SchedulerService`, `AnalyticsService`, `UsageService`, `ExportService`, `AccountService`, `PlanService`, `PaymentService`, `FeedbackService` |
 | `services/safety.py` | `detect_crisis` — the deterministic crisis lexicon. Pure: no DB, no network, no LLM |
 | `services/tags.py` | Tag normalisation and the canonical tag vocabulary. Pure |
 | `services/export/` | `/export` — `service.py` (load and package), `digest.py` (what the file says), `markdown.py` (how it looks) |
-| `repositories/` | MongoDB data access — `UserRepository`, `EntryRepository`, `StreakRepository`, `EventRepository`, `UsageRepository`, `NotificationRepository`, `PaymentRepository`, `ConversationRepository` |
+| `repositories/` | MongoDB data access — `UserRepository`, `EntryRepository`, `StreakRepository`, `EventRepository`, `UsageRepository`, `NotificationRepository`, `PaymentRepository`, `FeedbackRepository`, `ConversationRepository` |
 | `db/db.py` | MongoDB connection and collection accessors |
-| `db/indexes.py` | `ensure_indexes`, run at boot: the per-user indexes for `users`, `entries`, `streaks`, `notifications`, `ptb_conversations` |
+| `db/indexes.py` | `ensure_indexes`, run at boot: the per-user indexes for `users`, `entries`, `streaks`, `notifications`, `ptb_conversations`, `feedback` |
 | `config.py` | `require_config`, run in `main.py` before any service is imported |
 | `bot/persistence.py` | MongoDB-backed `BasePersistence` — conversation state and an allowlisted slice of `user_data` |
 | `messages/strings.py` | All user-facing message templates |
@@ -184,7 +191,7 @@ silently reinterprets every stored row after it — on the deploy that ships the
 the main menu comes back as mid-onboarding. `tests/test_states.py` pins the values so this fails CI
 instead of production.
 
-**PII surfaces and `/delete`** (`AccountService`): `users`, `entries`, `streaks`, `notifications`,
+**PII surfaces and `/delete`** (`AccountService`): `users`, `entries`, `streaks`, `feedback`, `notifications`,
 `usage`, `payments`, `events`, `ptb_user_data` and `ptb_conversations`, deleted in that order. Before
 the fan-out, the handler cancels a Plus subscription that could still renew (`edit_user_star_subscription`);
 a failed cancel does not stop the deletion, and the reply tells the user to cancel in Telegram. Every step is
@@ -227,7 +234,7 @@ TELEGRAM_TOKEN
 CLAUDE_API_KEY
 MONGODB_URI
 ANTHROPIC_MODEL (optional)
-ADMIN_TELEGRAM_IDS (optional — ids allowed /admin_plus and /refund)
+ADMIN_TELEGRAM_IDS (optional — ids allowed /admin_plus and /refund, and sent a copy of each /feedback)
 SUPPORT_CONTACT (optional — shown by /paysupport)
 ```
 

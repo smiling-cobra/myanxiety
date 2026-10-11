@@ -1,6 +1,7 @@
 """/settings — change the reminder time, pause reminders, resume them early.
 
-The menu also carries a Plus button, which opens `/plus` (`plus.py`).
+The menu also carries a Plus button, which opens `/plus` (`plus.py`), and a
+Send feedback button, which opens `/feedback` (`feedback.py`).
 
 Service calls go through `asyncio.to_thread` — see the package docstring.
 
@@ -27,6 +28,7 @@ from telegram.ext import ContextTypes
 
 from bot.handlers.journal import deps
 from bot.handlers.journal.errors import service_errors
+from bot.handlers.journal.feedback import request_feedback_from_settings
 from bot.handlers.journal.main_menu import main_menu_keyboard
 from bot.handlers.journal.plus import show_plus
 from bot.handlers.journal.states import MAIN_MENU, SETTINGS_MENU, SETTINGS_PAUSE_LENGTH, SETTINGS_TIME
@@ -37,6 +39,7 @@ from bot.keyboards import (
     PAUSE_REMINDERS,
     PLUS,
     RESUME_REMINDERS,
+    SEND_FEEDBACK,
     get_back_keyboard,
     get_pause_keyboard,
     get_settings_keyboard,
@@ -154,6 +157,9 @@ async def handle_settings_choice(update: Update, context: ContextTypes.DEFAULT_T
 
     if choice == PLUS:
         return await show_plus(update, context)
+
+    if choice == SEND_FEEDBACK:
+        return await request_feedback_from_settings(update, context)
 
     if choice == BACK:
         name = user.get('name') or context.user_data.get('name', 'there')

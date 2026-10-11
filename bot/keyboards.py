@@ -89,6 +89,7 @@ def get_delete_keyboard():
 CHANGE_REMINDER_TIME = '🕘 Change reminder time'
 PAUSE_REMINDERS = '⏸ Pause reminders'
 RESUME_REMINDERS = '▶️ Resume reminders'
+SEND_FEEDBACK = '💬 Send feedback'
 
 # A pause always has an end. There is deliberately no "off": a break that ends
 # by itself doesn't rely on anyone remembering to come back and switch it on.
@@ -101,7 +102,7 @@ PAUSE_LENGTHS = {
 
 def get_settings_keyboard(paused: bool):
     return ReplyKeyboardMarkup(
-        [[CHANGE_REMINDER_TIME], [RESUME_REMINDERS if paused else PAUSE_REMINDERS], [PLUS], [BACK]],
+        [[CHANGE_REMINDER_TIME], [RESUME_REMINDERS if paused else PAUSE_REMINDERS], [PLUS, SEND_FEEDBACK], [BACK]],
         resize_keyboard=True,
     )
 

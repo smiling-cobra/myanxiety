@@ -41,6 +41,10 @@ class TestPersistedStateValues:
         assert states.SETTINGS_TIME == 10
         assert states.SETTINGS_PAUSE_LENGTH == 11
 
+    def test_the_feedback_state_was_appended(self):
+        """Added with /feedback."""
+        assert states.FEEDBACK_TEXT == 12
+
     def test_every_state_is_distinct(self):
         values = [
             states.ONBOARDING_NAME,
@@ -55,6 +59,7 @@ class TestPersistedStateValues:
             states.SETTINGS_MENU,
             states.SETTINGS_TIME,
             states.SETTINGS_PAUSE_LENGTH,
+            states.FEEDBACK_TEXT,
         ]
         assert len(set(values)) == len(values)
 
