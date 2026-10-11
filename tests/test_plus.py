@@ -251,6 +251,7 @@ class TestNoOfferInTheEntryFlow:
     @pytest.mark.parametrize('name', [
         'REMINDER_MESSAGE', 'GUIDANCE_CRISIS_RESOURCES', 'GUIDANCE_STATIC_FALLBACK', 'GUIDANCE_OFFER_LOW',
         'GUIDANCE_OFFER_VERY_LOW', 'CHECK_IN_DONE', 'CHECK_IN_DONE_BRIEF', 'NOTE_SAVED', 'NOTE_REPLY',
+        'FEEDBACK_ASK',
     ])
     def test_no_entry_flow_template_mentions_plus(self, name):
         assert not _mentions_plus(getattr(strings, name))

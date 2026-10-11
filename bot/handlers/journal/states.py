@@ -9,8 +9,8 @@ come back as mid-onboarding, and a user mid-check-in would have their next
 message routed to a handler expecting something else entirely.
 
 That is why `ONBOARDING_THERAPY` sits after the check-in states rather than in
-flow order, and why `DELETE_CONFIRM` and then the settings states follow it:
-each was added after the others had already been written to the database.
+flow order, and why `DELETE_CONFIRM`, the settings states and then
+`FEEDBACK_TEXT` follow it: each was added after the others had already been written to the database.
 `tests/test_states.py` pins these values so a future insertion fails CI instead
 of production.
 """
@@ -27,7 +27,11 @@ of production.
     SETTINGS_MENU,
     SETTINGS_TIME,
     SETTINGS_PAUSE_LENGTH,
-) = range(12)
+    FEEDBACK_TEXT,
+) = range(13)
 
 LOW_MOOD_THRESHOLD = 4
 CRISIS_MOOD_THRESHOLD = 2
+
+# Daily check-ins (counted as total entries) before the one-time feedback ask.
+FEEDBACK_ASK_AFTER = 7

@@ -22,7 +22,8 @@ raised naming what is left. Every step is idempotent, so the user's retry
 finishes the job.
 
 What this cannot reach is said to the user in `DELETE_CONFIRM_PROMPT`: the
-Telegram chat itself, and text already processed by Anthropic.
+Telegram chat itself, text already processed by Anthropic, and the copies of
+any /feedback already forwarded to the admins in Telegram.
 
 A live Plus subscription is not data but a standing charge, and deleting the
 ledger row that names it would leave Telegram billing an account that no longer
@@ -37,6 +38,7 @@ import logging
 from repositories.conversation_repo import ConversationRepository
 from repositories.entry_repo import EntryRepository
 from repositories.event_repo import EventRepository
+from repositories.feedback_repo import FeedbackRepository
 from repositories.notification_repo import NotificationRepository
 from repositories.payment_repo import PaymentRepository
 from repositories.streak_repo import StreakRepository
@@ -61,6 +63,7 @@ class AccountService:
             ('users', users.delete_for_user),
             ('entries', entries.delete_for_user),
             ('streaks', streaks.delete_for_user),
+            ('feedback', FeedbackRepository().delete_for_user),
             ('notifications', NotificationRepository().delete_for_user),
             ('usage', UsageRepository().delete_for_user),
             ('payments', PaymentRepository().delete_for_user),

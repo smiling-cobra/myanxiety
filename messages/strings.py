@@ -26,6 +26,8 @@ PRIVACY_NOTICE = (
     "• If you subscribe to Plus, Telegram processes the payment in Stars. For each payment I "
     "keep your Telegram ID, Telegram's payment references, the plan, the amount and currency, "
     "whether it renews, and when it was paid, runs out or was refunded — nothing else.\n"
+    "• If you send feedback with */feedback*, I store it with your Telegram ID, and a copy goes "
+    "to the people who run this bot, in Telegram.\n"
     "• */delete* permanently removes everything this bot stores about you, in one step.\n"
     "• I'm a journalling tool. I'm not a therapist, a diagnosis, or a crisis service.\n\n"
     "Type */privacy* any time to read this again."
@@ -169,6 +171,7 @@ HELP_MESSAGE = (
     "*/settings* — Change your reminder time, or pause reminders\n"
     "*/plus* — Plus: replies to every entry, weekly insights, 90-day exports\n"
     "*/paysupport* — Help with payments, cancelling and refunds\n"
+    "*/feedback* — Send an idea, a problem or a thank-you to the people who run this bot\n"
     "*/delete* — Permanently delete everything I store about you\n"
     "*/privacy* — What happens to what you write\n"
     "*/cancel* — End the current session\n\n"
@@ -284,12 +287,13 @@ FLAG_NO_ENTRY = "There's no entry to flag yet. Tap *Check In* to write one, then
 DELETE_CONFIRM_PROMPT = (
     "*Delete everything?*\n\n"
     "This permanently removes everything this bot stores about you: every journal entry, "
-    "your mood scores and tags, your streak, your name and reminder settings, and the "
-    "records of how you've used the bot.\n\n"
+    "your mood scores and tags, your streak, your name and reminder settings, any feedback "
+    "you've sent, and the records of how you've used the bot.\n\n"
     "It can't be undone. If you want a copy first, choose *No* and send */export*.\n\n"
-    "Two things this can't reach: the messages in this Telegram chat (you can clear the "
-    "chat yourself), and text that was already sent to Anthropic, which is handled under "
-    "Anthropic's own data retention terms.\n\n"
+    "Three things this can't reach: the messages in this Telegram chat (you can clear the "
+    "chat yourself), text that was already sent to Anthropic, which is handled under "
+    "Anthropic's own data retention terms, and copies of feedback already sent to the "
+    "people who run this bot.\n\n"
     "If you have Plus, the subscription is cancelled too. The current period isn't refunded."
 )
 
@@ -359,6 +363,43 @@ REMINDER_MESSAGE = (
 )
 
 WRONG_MOOD = "Please enter a number between 1 and 10."
+
+# --- Feedback --------------------------------------------------------------
+
+FEEDBACK_PROMPT = (
+    "What would you like to tell us? An idea, something that got in the way, or just how "
+    "it's going — anything helps.\n\n"
+    "Send it as one message, up to {limit} characters. Tap Back or send /cancel to skip."
+)
+
+FEEDBACK_THANKS = (
+    "Thank you — that's on its way. A person reads every message, though not straight away. 🌿"
+)
+
+FEEDBACK_TOO_LONG = (
+    "That's a little over {limit} characters ({length}). Could you trim it and send it again? "
+    "Or tap Back to skip."
+)
+
+FEEDBACK_LIMIT_REACHED = (
+    "Thank you for all the feedback today — that's the most I can take in one day. "
+    "Send /feedback again tomorrow if there's more."
+)
+
+FEEDBACK_NOT_READY = "Feedback will be here as soon as we've finished getting you set up."
+
+# The one-time ask after FEEDBACK_ASK_AFTER entries. Only after a daily check-in
+# at an ordinary mood, never after a note, a low score or crisis resources. It
+# is not an offer, and must never mention Plus (tests/test_plus.py).
+FEEDBACK_ASK = (
+    "One small thing: you've been checking in for a while now — thank you. "
+    "Is there anything that would make this more useful, or anything that gets in the way?\n\n"
+    "Send /feedback and tell us. Or just ignore this — I won't ask again."
+)
+
+# Sent to each id in ADMIN_TELEGRAM_IDS, always as plain text: the user's words
+# must never be parsed as Markdown.
+FEEDBACK_ADMIN_FORWARD = "Feedback from {telegram_id} ({source}, {plan}):\n\n{text}"
 
 # --- Plus ------------------------------------------------------------------
 # Plus is offered only on /plus, in the weekly summary's pattern slot, in the

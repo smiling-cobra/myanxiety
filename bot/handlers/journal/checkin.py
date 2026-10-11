@@ -23,6 +23,11 @@ With Plus, a note gets a written reply too. That is the only difference Plus
 makes here, and nothing in this flow ever mentions Plus: someone who has just
 written about a hard moment must not meet an offer (see `PLUS_PERKS` in
 `messages/strings.py`).
+
+Once, after `FEEDBACK_ASK_AFTER` entries, an ordinary daily check-in is followed
+by a short ask for feedback. Never after a note, a low score or crisis resources,
+and never at the cost of the check-in: it runs after the reply and swallows its
+own failures.
 """
 import asyncio
 import logging
@@ -36,6 +41,7 @@ from bot.handlers.journal.states import (
     CHECK_IN_MOOD,
     CHECK_IN_TEXT,
     CRISIS_MOOD_THRESHOLD,
+    FEEDBACK_ASK_AFTER,
     LOW_MOOD_THRESHOLD,
     MAIN_MENU,
 )
@@ -46,6 +52,7 @@ from messages.strings import (
     CHECK_IN_DONE_BRIEF,
     CHECK_IN_TEXT_PROMPT,
     ERROR_GENERIC,
+    FEEDBACK_ASK,
     GUIDANCE_CRISIS_RESOURCES,
     GUIDANCE_DECLINED,
     GUIDANCE_OFFER_LOW,
@@ -57,6 +64,7 @@ from messages.strings import (
     WRONG_MOOD,
 )
 from services import analytics_service as analytics
+from services import time_utils
 from services.safety import detect_crisis
 
 logger = logging.getLogger(__name__)
@@ -72,6 +80,9 @@ _NOTE = 'note'
 _MOOD_TRIGGER = 'mood'
 _CONTENT_TRIGGER = 'content'
 _LOST_STATE_TRIGGER = 'lost_state'
+
+# user_data key, not persisted: a /feedback right after the ask counts as source=prompt.
+FEEDBACK_ASKED = 'feedback_asked'
 
 
 def _name(context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -145,6 +156,64 @@ async def _completion_message(
     return CHECK_IN_DONE.format(name=escape_md(name), llm_response=escape_md(llm_response), streak=streak)
 
 
+def _feedback_ask_due(first_of_day: bool, triggers: list, mood_score: int, total_entries: int) -> bool:
+    """Whether this entry may be followed by the one-time feedback ask.
+
+    Only an ordinary daily check-in: never a note, and never alongside crisis
+    resources or a guidance offer, so a struggling user is never asked for feedback.
+    """
+    return (
+        first_of_day
+        and not triggers
+        and mood_score > LOW_MOOD_THRESHOLD
+        and total_entries >= FEEDBACK_ASK_AFTER
+    )
+
+
+async def _ask_for_feedback_once(update: Update, context: ContextTypes.DEFAULT_TYPE, telegram_id: int) -> None:
+    """Send the one-time feedback ask if this user has never had it. Never raises.
+
+    `feedback_prompted_at` is written before the message is sent, so a failed
+    send costs one ask rather than repeating it. The write is the non-upserting
+    `update`, and a user with no record is never asked.
+    """
+    try:
+        user = await asyncio.to_thread(deps.user_svc.get, telegram_id)
+        if not user or user.get('feedback_prompted_at'):
+            return
+        await asyncio.to_thread(deps.user_svc.update, telegram_id, feedback_prompted_at=time_utils.now())
+        await update.message.reply_text(FEEDBACK_ASK)
+        context.user_data[FEEDBACK_ASKED] = True
+        await asyncio.to_thread(deps.analytics_svc.track, analytics.FEEDBACK_PROMPTED, telegram_id)
+    except Exception:
+        logger.warning('Feedback ask failed for user %s', telegram_id, exc_info=True)
+
+
+async def _offer_guidance_if_needed(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, telegram_id: int, text: str, mood_score: int, categories
+) -> int:
+    """Offer coping guidance after a low or content-flagged entry. The next state either way."""
+    # A content match opens the guidance offer even when the rating is high,
+    # for the same reason it shows the resources: the text is the signal the
+    # number missed.
+    acute = mood_score <= CRISIS_MOOD_THRESHOLD or bool(categories)
+    if acute or mood_score <= LOW_MOOD_THRESHOLD:
+        context.user_data['entry_text'] = text
+        context.user_data['acute'] = acute
+        offer = GUIDANCE_OFFER_VERY_LOW if acute else GUIDANCE_OFFER_LOW
+        await update.message.reply_text(offer, reply_markup=get_guidance_keyboard())
+        await asyncio.to_thread(
+            deps.analytics_svc.track,
+            analytics.GUIDANCE_OFFERED,
+            telegram_id,
+            mood_score=mood_score,
+            acute=acute,
+        )
+        return CHECK_IN_GUIDANCE_OFFER
+
+    return MAIN_MENU
+
+
 async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
     telegram_id = update.effective_user.id
@@ -216,25 +285,10 @@ async def handle_entry_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         plus=plus,
     )
 
-    # A content match opens the guidance offer even when the rating is high,
-    # for the same reason it shows the resources: the text is the signal the
-    # number missed.
-    acute = mood_score <= CRISIS_MOOD_THRESHOLD or bool(categories)
-    if acute or mood_score <= LOW_MOOD_THRESHOLD:
-        context.user_data['entry_text'] = text
-        context.user_data['acute'] = acute
-        offer = GUIDANCE_OFFER_VERY_LOW if acute else GUIDANCE_OFFER_LOW
-        await update.message.reply_text(offer, reply_markup=get_guidance_keyboard())
-        await asyncio.to_thread(
-            deps.analytics_svc.track,
-            analytics.GUIDANCE_OFFERED,
-            telegram_id,
-            mood_score=mood_score,
-            acute=acute,
-        )
-        return CHECK_IN_GUIDANCE_OFFER
+    if _feedback_ask_due(first_of_day, triggers, mood_score, stats['total']):
+        await _ask_for_feedback_once(update, context, telegram_id)
 
-    return MAIN_MENU
+    return await _offer_guidance_if_needed(update, context, telegram_id, text, mood_score, categories)
 
 
 async def handle_guidance_offer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

@@ -70,6 +70,8 @@ class TestTextReachesTheStepWaitingForIt:
         (journal.SETTINGS_TIME, '21:30', 'handle_settings_time'),
         (journal.SETTINGS_PAUSE_LENGTH, '1 week', 'handle_pause_length'),
         (journal.SETTINGS_MENU, '⭐ Plus', 'handle_settings_choice'),
+        (journal.SETTINGS_MENU, '💬 Send feedback', 'handle_settings_choice'),
+        (journal.FEEDBACK_TEXT, 'it would be nice to have dark mode', 'handle_feedback_text'),
     ])
     def test_state_handler_wins_over_lost_state_recovery(self, conversation, state, text, expected):
         assert _route(conversation, state, text) == expected
@@ -89,6 +91,7 @@ class TestCommandsWorkFromAnywhere:
         ('/flag', 'toggle_flag'),
         ('/settings', 'show_settings'),
         ('/plus', 'show_plus'),
+        ('/feedback', 'request_feedback'),
     ])
     def test_before_any_conversation(self, conversation, command, expected):
         assert _route(conversation, None, command) == expected
@@ -101,6 +104,7 @@ class TestCommandsWorkFromAnywhere:
         ('/flag', 'toggle_flag'),
         ('/settings', 'show_settings'),
         ('/plus', 'show_plus'),
+        ('/feedback', 'request_feedback'),
         ('/cancel', 'cancel'),
     ])
     @pytest.mark.parametrize('state', [
@@ -110,6 +114,7 @@ class TestCommandsWorkFromAnywhere:
         journal.SETTINGS_MENU,
         journal.SETTINGS_TIME,
         journal.SETTINGS_PAUSE_LENGTH,
+        journal.FEEDBACK_TEXT,
     ])
     def test_mid_conversation(self, conversation, state, command, expected):
         assert _route(conversation, state, command) == expected

@@ -23,6 +23,7 @@ from bot.persistence import MongoPersistence
 from db.db import notifications_collection
 from services.account_service import AccountService, DeletionIncomplete
 from services.analytics_service import AnalyticsService
+from services.feedback_service import FeedbackService
 from services.journal_service import JournalService
 from services.payment_service import PLUS_PAYLOAD, PLUS_PRICE_STARS, PaymentService
 from services.usage_service import UsageService
@@ -47,6 +48,7 @@ async def _seed(telegram_id: int) -> None:
     journal.save_entry(telegram_id, 3, 'something private', ['work'])
     journal.save_entry(telegram_id, 6, 'something else private', ['sleep'])
     UsageService().consume_llm(telegram_id, 2)
+    FeedbackService().submit(telegram_id, 'an idea, in my own words')
     AnalyticsService().track('check_in_completed', telegram_id, mood_score=3)
     notifications_collection().insert_one({'telegram_id': telegram_id, 'kind': 'legacy'})
     PaymentService().record(
